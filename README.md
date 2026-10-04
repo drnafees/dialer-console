@@ -8,30 +8,25 @@ The mock follows the public OpenAPI spec of a commercial dialer: Basic auth, `[{
 
 ## The page
 
-**Demo** (front page)
+Built so that someone who has never heard the word "webhook" can use it. Every tab says what it is for in one line, every step is numbered, every action tells you what happened in plain words, and nothing is real so nothing can break. Developers flip on **Developer view** (top right) to see the API codes, paths, raw JSON and curl commands behind every label.
 
-1. **Log in** — `GET /organization` with `Authorization: Basic …`
-2. **Leads** — `GET /leads`; changing a status sends `PUT /leads/{id}`
-3. **Webhooks** — `POST /webhooks { event, url, authKey, template }`
-4. **Received webhooks** — what the API delivered to the page's own `/hooks/receive`
-
-**Toolkit** (tabs)
-
-| Tab | What it does | Vendor API used |
+| Tab | In plain words | Vendor API used |
 |---|---|---|
-| Import | CSV → column guesses → dedupe dry-run (E.164 phones, lower-cased email, blacklist pools) → run | `POST /imports`, `/imports/{id}/insert`, `/imports/{id}/start`, `GET /imports/{id}`, `callbackUrl` |
-| Field mappings | Dialer field IDs ↔ CRM property names | `POST/GET/PUT/DELETE /field-mappings` |
-| CRM connector | Incremental sync on `lastModifiedTime $gt cursor` with overlap window, `nextUrl` paging, token bucket (60/min, 2 concurrent), dry-run, conflict policies, run log, mock CRM | `GET /leads?filters=…&includeMeta=true` |
-| Deliveries | Receiver accepting JSON, form-urlencoded and XML; authKey check; idempotency; forward to CRM with backoff 0s/2s/10s/60s/5m; per-attempt log; replay | `/hooks/receive` (ours) |
-| Journeys | Inbound trigger simulator: Bearer token, match on lead id / external id / phone, map body keys to fields; applies via `PUT /leads/{id}` so outbound webhooks fire | `PUT /leads/{id}` |
-| Request log | Every `/v1` call with `X-Request-Id`, latency, status, remaining rate budget | — |
-| Diagnose | Checks the integration end to end and explains findings in customer language | — |
+| **Try it** | Connect, turn on notifications, change a contact, watch the message arrive. Four numbered steps. | `GET /organization`, `POST /webhooks`, `PUT /leads/{id}`, `GET /leads` |
+| **Add people** | Paste a spreadsheet. See exactly who is new, who is already there, who must not be called. Then add them. | `POST /imports` → `/insert` → `/start` → `GET /imports/{id}`, `callbackUrl` |
+| **Match fields** | "The dialer says Firstname, my CRM says first_name." Pair them once. | `/field-mappings` |
+| **Sync to CRM** | Preview what would change, then copy changed contacts to a (pretend) CRM. Edit the CRM to see conflict rules work. | `GET /leads?filters=…&includeMeta=true` with cursor, overlap window, `nextUrl` paging, token bucket 60/min · 2 concurrent |
+| **Incoming** | Every message the dialer sent, told as a story: received → key checked → not a duplicate → saved. Fake a message in JSON, form or XML; fake a wrong key; fake a CRM outage and watch retries. | `/hooks/receive` (ours) |
+| **Push to dialer** | The other direction: make an "inbox" with a token; any app that posts to it updates the matching person. | `PUT /leads/{id}` |
+| **Activity** | Every API call in a sentence ("Updated contact 204179334"), with result, latency and remaining rate budget. | — |
+| **Health check** | Finds problems and says how to fix them in the words you would use with a customer. | — |
 
 ## Run
 
 ```bash
 npm install
-npm run preview      # http://localhost:8788
+npm run preview            # build + serve on http://localhost:8788
+scripts/dev-server.sh      # same, but first kills stray wrangler/workerd holding the port (FRESH=1 wipes local KV)
 ```
 
 ```bash

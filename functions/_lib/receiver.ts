@@ -94,7 +94,7 @@ export async function forward(store: KvStore, delivery: InboundDelivery, failTim
     let ok = false;
     let error: string | null = null;
     try {
-      if (attemptNo <= failTimes) throw new Error(`Simulated downstream failure (${attemptNo}/${failTimes})`);
+      if (attemptNo <= failTimes) throw new Error(`The CRM did not answer (pretend outage, ${attemptNo} of ${failTimes})`);
       await upsertCrmFromDelivery(store, current.payload);
       ok = true;
     } catch (e) {

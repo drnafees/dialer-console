@@ -2,11 +2,15 @@
 
 import {
   ArrowRight,
+  Check,
   CheckCircle,
+  Code,
   Eye,
   FlaskConical,
   GitCompareArrows,
+  HelpCircle,
   Inbox,
+  Info,
   PhoneOutgoing,
   Play,
   Plus,
@@ -19,6 +23,7 @@ import {
   Stethoscope,
   Upload,
   Wrench,
+  X,
   Zap,
   createElement,
   type IconNode,
@@ -26,11 +31,15 @@ import {
 
 const ICONS: Record<string, IconNode> = {
   "arrow-right": ArrowRight,
+  check: Check,
   "check-circle": CheckCircle,
+  code: Code,
   eye: Eye,
   "flask-conical": FlaskConical,
   "git-compare-arrows": GitCompareArrows,
+  "help-circle": HelpCircle,
   inbox: Inbox,
+  info: Info,
   "phone-outgoing": PhoneOutgoing,
   play: Play,
   plus: Plus,
@@ -43,9 +52,11 @@ const ICONS: Record<string, IconNode> = {
   stethoscope: Stethoscope,
   upload: Upload,
   wrench: Wrench,
+  x: X,
   zap: Zap,
 };
 import { ApiError } from "./api";
+import { ACTION_LABEL, eventLabel, FORWARD_LABEL, statusLabel } from "./labels";
 
 export const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel)!;
 export const $$ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => [...root.querySelectorAll<T>(sel)];
@@ -87,6 +98,59 @@ export const STATUS_BADGE: Record<string, string> = {
   blacklisted: "bg-coral-soft text-coral-dark",
 };
 export const statusBadge = (s: string) => badge(s, STATUS_BADGE[s] ?? "bg-paper-2 text-grey-2");
+
+// ---- developer mode: show raw API codes next to plain-language labels ----
+export const devMode = () => localStorage.getItem("devMode") === "1";
+export function setDevMode(on: boolean): void {
+  localStorage.setItem("devMode", on ? "1" : "0");
+  document.documentElement.classList.toggle("dev", on);
+}
+// Visible only in developer mode.
+export const dev = (html: string) => `<span class="dev-only">${html}</span>`;
+// A label with its code alongside in developer mode.
+export const labelled = (label: string, code: string) => `${esc(label)}${dev(` <code>${esc(code)}</code>`)}`;
+
+export const eventBadge = (e: string) => badge(eventLabel(e), "bg-indigo-soft text-indigo-brand") + dev(` <code>${esc(e)}</code>`);
+export const forwardBadge = (s: string) => badge(FORWARD_LABEL[s] ?? s, STATUS_BADGE[s] ?? "bg-paper-2 text-grey-2");
+export const actionBadge = (s: string) => badge(ACTION_LABEL[s] ?? s, STATUS_BADGE[s] ?? "bg-paper-2 text-grey-2");
+export const leadStatusBadge = (s: string, tone: string) => badge(statusLabel(s), tone) + dev(` <code>${esc(s)}</code>`);
+
+// ---- toasts ----
+export function toast(message: string, tone: "ok" | "warn" | "error" = "ok"): void {
+  let host = document.getElementById("toasts");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "toasts";
+    host.className = "pointer-events-none fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 flex-col gap-2";
+    document.body.appendChild(host);
+  }
+  for (const old of host.children) old.remove();
+  const el = document.createElement("div");
+  el.className = `toast toast-${tone}`;
+  el.innerHTML = `${icon(tone === "ok" ? "check-circle" : tone === "warn" ? "info" : "x")}<span>${esc(message)}</span>`;
+  host.appendChild(el);
+  setTimeout(() => el.classList.add("toast-out"), 3200);
+  setTimeout(() => el.remove(), 3800);
+}
+
+// ---- small reusable blocks ----
+export const help = (text: string) => `<span class="help" tabindex="0">${icon("help-circle", "icon h-4 w-4")}<span class="help-tip">${esc(text)}</span></span>`;
+
+export const emptyState = (iconName: string, title: string, hint: string, actionHtml = "") =>
+  `<div class="empty">${icon(iconName, "icon h-8 w-8 text-grey")}<p class="mt-3 font-semibold">${esc(title)}</p><p class="mt-1 text-sm text-grey-2">${esc(hint)}</p>${actionHtml ? `<div class="mt-4">${actionHtml}</div>` : ""}</div>`;
+
+export const stepHeader = (n: number, title: string, sub: string, done = false) =>
+  `<div class="flex items-start gap-4"><span class="step ${done ? "step-done" : ""}">${done ? icon("check", "icon h-4 w-4 text-white") : n}</span><div><h2 class="text-lg">${title}</h2>${sub ? `<p class="mt-1 text-sm text-grey-2">${sub}</p>` : ""}</div></div>`;
+
+export const explain = (title: string, body: string) =>
+  `<details class="explain"><summary>${icon("info", "icon h-4 w-4")} ${esc(title)}</summary><div class="mt-2 text-sm text-grey-2">${body}</div></details>`;
+
+export const busy = (btn: HTMLButtonElement, on: boolean, label?: string) => {
+  btn.disabled = on;
+  if (label) btn.dataset.label ??= btn.innerHTML;
+  if (on && label) btn.innerHTML = `<span class="spinner"></span> ${esc(label)}`;
+  if (!on && btn.dataset.label) btn.innerHTML = btn.dataset.label;
+};
 
 export function fail(el: HTMLElement, e: unknown): void {
   el.textContent = e instanceof ApiError ? `${e.status}: ${e.message}` : String(e);
