@@ -18,5 +18,5 @@ compatibility_date = "2025-09-01"
 
 [[kv_namespaces]]
 binding = "CONSOLE_KV"
-id = "REPLACE_WITH_PRODUCTION_NAMESPACE_ID"
-preview_id = "REPLACE_WITH_PREVIEW_NAMESPACE_ID"
+id = "bde98fb190024dd9942ed4a84b14e903"
+preview_id = "f7231fdf90074c7380b747c27918f94c"
