@@ -1,21 +1,21 @@
-import type { WebhookDelivery } from "../../src/core/types";
 import { json, KvStore, type Env } from "../_lib/kv-store";
+import { receiveDelivery } from "../_lib/receiver";
 
-// The console's own webhook endpoint. Register it in the mock API as
-// https://<host>/hooks/receive with an authKey; the mock appends ?authKey=... on delivery.
-export const EXPECTED_AUTH_KEY = "console-secret";
+export { EXPECTED_AUTH_KEY } from "../_lib/receiver";
 
-export async function receive(store: KvStore, authKey: string | null, payload: WebhookDelivery): Promise<void> {
-  await store.pushEvent({ id: crypto.randomUUID(), receivedAt: new Date().toISOString(), authKeyValid: authKey === EXPECTED_AUTH_KEY, payload });
-}
-
+// The console's own webhook endpoint. Accepts JSON, application/x-www-form-urlencoded
+// and XML; verifies ?authKey=; dedupes; forwards to the CRM with retries.
+// ?failTimes=N makes the first N forward attempts fail (demo of the retry path).
 export const onRequestPost = async ({ request, env }: EventContext<Env, string, unknown>): Promise<Response> => {
-  let payload: WebhookDelivery;
-  try {
-    payload = (await request.json()) as WebhookDelivery;
-  } catch {
-    return json({ error: "Body is not valid JSON" }, 400);
-  }
-  await receive(new KvStore(env.CONSOLE_KV), new URL(request.url).searchParams.get("authKey"), payload);
-  return json({ received: true }, 202);
+  const url = new URL(request.url);
+  const store = new KvStore(env.CONSOLE_KV);
+  await store.ensureSeeded();
+  const result = await receiveDelivery(store, {
+    authKey: url.searchParams.get("authKey"),
+    contentType: request.headers.get("Content-Type"),
+    raw: await request.text(),
+    origin: url.origin,
+    failTimes: Number(url.searchParams.get("failTimes") ?? "0") || 0,
+  });
+  return json(result.body, result.status);
 };

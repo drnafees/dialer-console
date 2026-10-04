@@ -1,1 +1,1 @@
-{ "version": 1, "include": ["/v1/*", "/hooks/*", "/console/*"], "exclude": [] }
+{ "version": 1, "include": ["/v1/*", "/hooks/*", "/console/*", "/integrations/*", "/journeys/*"], "exclude": [] }

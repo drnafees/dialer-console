@@ -1,19 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { applyTemplate, handle, matchesFilters, type ApiRequest, type Store } from "../src/core/mock-api";
+import { applyTemplate, handle, matchesFilters, type ApiRequest } from "../src/core/mock-api";
 import * as seed from "../src/core/seed";
 import type { Lead, Webhook } from "../src/core/types";
-
-class MemoryStore implements Store {
-  leads = new Map(seed.buildLeads().map((l) => [l.id, l]));
-  webhooks = new Map<number, Webhook>();
-  async listLeads() { return [...this.leads.values()]; }
-  async getLead(id: number) { return this.leads.get(id) ?? null; }
-  async putLead(lead: Lead) { this.leads.set(lead.id, lead); }
-  async deleteLead(id: number) { this.leads.delete(id); }
-  async listWebhooks() { return [...this.webhooks.values()]; }
-  async putWebhook(w: Webhook) { this.webhooks.set(w.id, w); }
-  async deleteWebhook(id: number) { this.webhooks.delete(id); }
-}
+import { MemoryStore } from "./memory-store";
 
 const AUTH = `Basic ${btoa("demo:demo")}`;
 const req = (method: string, path: string, extra: Partial<ApiRequest> = {}): ApiRequest => ({ method, path, query: {}, authorization: AUTH, ...extra });

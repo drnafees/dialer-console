@@ -1,0 +1,1048 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "name": "Dialer API (mock)",
+    "description": "Requests against the mock dialer REST API served by this repo's Pages Functions (a dialer API modelled on a public OpenAPI spec). Run `npm run preview` first, then select the `local` environment. Rate limit: 60 requests/min burst, 2 concurrent.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      { "key": "username", "value": "{{username}}", "type": "string" },
+      { "key": "password", "value": "{{password}}", "type": "string" }
+    ]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.response.code === 429) {",
+          "    console.log('Retry-After:', pm.response.headers.get('Retry-After'));",
+          "    console.log('X-RateLimit-Remaining:', pm.response.headers.get('X-RateLimit-Remaining'));",
+          "    pm.test('Rate limited: burst limit is 60/min, 2 concurrent', function () {",
+          "        pm.expect.fail('Rate limited: burst limit is 60/min, 2 concurrent');",
+          "    });",
+          "}",
+          "pm.test('Response is JSON', function () {",
+          "    pm.response.to.be.json;",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "firstFieldId", "value": "" },
+    { "key": "pageCount", "value": "" },
+    { "key": "cursor", "value": "" },
+    { "key": "newLeadId", "value": "" },
+    { "key": "contactId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "0 Connectivity",
+      "item": [
+        {
+          "name": "GET organization",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/organization", "host": ["{{baseUrl}}"], "path": ["v1", "organization"] },
+            "description": "Smoke test: returns the organization the credentials belong to. Confirms auth and connectivity."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Body has name', function () { pm.expect(pm.response.json()).to.have.property('name'); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET fields",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/fields", "host": ["{{baseUrl}}"], "path": ["v1", "fields"] },
+            "description": "Lists the master/result data field definitions. Field ids are used as keys in lead masterData/resultData and import rows."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Body is array', function () {",
+                  "    var body = pm.response.json();",
+                  "    pm.expect(body).to.be.an('array');",
+                  "    if (body.length) { pm.collectionVariables.set('firstFieldId', body[0].id); }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1 Reads with filters",
+      "item": [
+        {
+          "name": "GET leads status=new",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/leads?filters=%7B%22status%22%3A%7B%22%24eq%22%3A%22new%22%7D%7D",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "leads"],
+              "query": [{ "key": "filters", "value": "{\"status\":{\"$eq\":\"new\"}}" }]
+            },
+            "description": "Filter leads with a JSON `filters` object using the `$eq` operator."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET leads in campaign with attempts, sorted",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/leads?filters=%7B%22campaignId%22%3A%7B%22%24eq%22%3A{{campaignId}}%7D%2C%22contactAttempts%22%3A%7B%22%24gt%22%3A0%7D%7D&sortProperty=lastModifiedTime&sortDirection=DESC",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "leads"],
+              "query": [
+                { "key": "filters", "value": "{\"campaignId\":{\"$eq\":{{campaignId}}},\"contactAttempts\":{\"$gt\":0}}" },
+                { "key": "sortProperty", "value": "lastModifiedTime" },
+                { "key": "sortDirection", "value": "DESC" }
+              ]
+            },
+            "description": "Combines two filters (`$eq` and `$gt`) with sorting by lastModifiedTime descending."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET leads paginated with meta",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/leads?pageSize=3&page=1&includeMeta=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "leads"],
+              "query": [
+                { "key": "pageSize", "value": "3" },
+                { "key": "page", "value": "1" },
+                { "key": "includeMeta", "value": "true" }
+              ]
+            },
+            "description": "Pagination with `includeMeta=true` wraps the result in `{ data, meta }` where meta.pagination describes page/pageCount."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('meta.pagination exists', function () {",
+                  "    var body = pm.response.json();",
+                  "    pm.expect(body.meta).to.have.property('pagination');",
+                  "    pm.collectionVariables.set('pageCount', body.meta.pagination.pageCount);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET campaigns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/campaigns", "host": ["{{baseUrl}}"], "path": ["v1", "campaigns"] },
+            "description": "Lists all campaigns."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET campaign by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/campaigns/{{campaignId}}", "host": ["{{baseUrl}}"], "path": ["v1", "campaigns", "{{campaignId}}"] },
+            "description": "Fetch a single campaign by id."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET sessions status=success",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/sessions?filters=%7B%22status%22%3A%7B%22%24eq%22%3A%22success%22%7D%7D",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "sessions"],
+              "query": [{ "key": "filters", "value": "{\"status\":{\"$eq\":\"success\"}}" }]
+            },
+            "description": "Call sessions filtered to successful outcomes."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/users", "host": ["{{baseUrl}}"], "path": ["v1", "users"] },
+            "description": "Lists agents/users in the organization."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET pools",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/pools", "host": ["{{baseUrl}}"], "path": ["v1", "pools"] },
+            "description": "Lists contact pools."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET contacts in pool",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/contacts?filters=%7B%22poolId%22%3A%7B%22%24eq%22%3A{{poolId}}%7D%7D",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "contacts"],
+              "query": [{ "key": "filters", "value": "{\"poolId\":{\"$eq\":{{poolId}}}}" }]
+            },
+            "description": "Contacts filtered to a single pool."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2 Incremental sync",
+      "item": [
+        {
+          "name": "GET leads modified since cursor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/leads?filters=%7B%22lastModifiedTime%22%3A%7B%22%24gt%22%3A%22{{cursor}}%22%7D%7D&sortProperty=lastModifiedTime&sortDirection=ASC&pageSize=100&includeMeta=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "leads"],
+              "query": [
+                { "key": "filters", "value": "{\"lastModifiedTime\":{\"$gt\":\"{{cursor}}\"}}" },
+                { "key": "sortProperty", "value": "lastModifiedTime" },
+                { "key": "sortDirection", "value": "ASC" },
+                { "key": "pageSize", "value": "100" },
+                { "key": "includeMeta", "value": "true" }
+              ]
+            },
+            "description": "Incremental sync pattern: fetch leads modified after the `cursor` collection variable, ascending. The pre-request script seeds the cursor to 7 days ago when unset; the test advances it to the newest lastModifiedTime seen. Re-run to fetch only new changes."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('cursor')) {",
+                  "    var d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);",
+                  "    pm.collectionVariables.set('cursor', d.toISOString());",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "var body = pm.response.json();",
+                  "var rows = Array.isArray(body) ? body : (body.data || []);",
+                  "var max = pm.collectionVariables.get('cursor');",
+                  "rows.forEach(function (r) { if (r.lastModifiedTime && r.lastModifiedTime > max) { max = r.lastModifiedTime; } });",
+                  "pm.collectionVariables.set('cursor', max);",
+                  "console.log('cursor ->', max, '(' + rows.length + ' rows)');"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3 Write leads",
+      "item": [
+        {
+          "name": "PUT lead status=success",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"status\":\"success\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/v1/leads/{{leadId}}", "host": ["{{baseUrl}}"], "path": ["v1", "leads", "{{leadId}}"] },
+            "description": "Update the status of an existing lead. Response is `{ code, message }`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('body.code is 200', function () { pm.expect(pm.response.json().code).to.eql(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT lead master/result data",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"masterData\":[{\"id\":4,\"value\":\"peter@holm.dk\"}],\"resultData\":[{\"id\":20,\"value\":\"Solar\"}]}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/v1/leads/{{leadId}}", "host": ["{{baseUrl}}"], "path": ["v1", "leads", "{{leadId}}"] },
+            "description": "Update field values on a lead. masterData and resultData are arrays of `{ id, value }` keyed by field id."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST lead",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"campaignId\":{{campaignId}},\"masterData\":[{\"id\":1,\"value\":\"Postman\"},{\"id\":2,\"value\":\"Test\"},{\"id\":3,\"value\":\"+45 11 22 33 44\"}]}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/v1/leads", "host": ["{{baseUrl}}"], "path": ["v1", "leads"] },
+            "description": "Create a lead directly in a campaign. The new id is saved to the `newLeadId` collection variable for the DELETE below."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "var body = pm.response.json();",
+                  "if (body && body.id) { pm.collectionVariables.set('newLeadId', body.id); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE new lead",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/leads/{{newLeadId}}", "host": ["{{baseUrl}}"], "path": ["v1", "leads", "{{newLeadId}}"] },
+            "description": "Deletes the lead created by the previous request (uses `newLeadId`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT invalid status (expect 400)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"status\":\"won\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/v1/leads/{{leadId}}", "host": ["{{baseUrl}}"], "path": ["v1", "leads", "{{leadId}}"] },
+            "description": "Negative test: `won` is not a valid lead status, so the API must reject with 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', function () { pm.response.to.have.status(400); });",
+                  "pm.test('body.code is 400', function () { pm.expect(pm.response.json().code).to.eql(400); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4 Import flow",
+      "item": [
+        {
+          "name": "POST import (create)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"poolId\":{{poolId}},\"match\":{\"fields\":[3],\"blacklist\":[]},\"updateFields\":[4],\"onImportedAction\":{\"type\":\"addToCampaign\",\"campaignId\":{{campaignId}}},\"callbackUrl\":\"{{baseUrl}}/hooks/receive?authKey={{authKey}}\"}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/v1/imports", "host": ["{{baseUrl}}"], "path": ["v1", "imports"] },
+            "description": "Step 1/4: create an import job. Matches existing contacts on phone (field 3), updates email (field 4), adds imported contacts to the campaign and posts a callback to the console receiver when done. Saves id to `importId`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "var body = pm.response.json();",
+                  "if (body && body.id) { pm.collectionVariables.set('importId', body.id); pm.environment.set('importId', body.id); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST import insert rows",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "[{\"data\":{\"1\":\"Alice\",\"2\":\"Andersen\",\"3\":\"+45 20 12 34 56\",\"4\":\"alice@example.dk\"}},{\"data\":{\"1\":\"Bob\",\"2\":\"Bang\",\"3\":\"+45 99 88 77 66\"}}]",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/v1/imports/{{importId}}/insert", "host": ["{{baseUrl}}"], "path": ["v1", "imports", "{{importId}}", "insert"] },
+            "description": "Step 2/4: insert rows into the import. Each row is `{ data: { fieldId: value } }`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST import start",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/imports/{{importId}}/start", "host": ["{{baseUrl}}"], "path": ["v1", "imports", "{{importId}}", "start"] },
+            "description": "Step 3/4: start processing the import."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET import status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/imports/{{importId}}", "host": ["{{baseUrl}}"], "path": ["v1", "imports", "{{importId}}"] },
+            "description": "Step 4/4: poll the import until its status reaches a terminal state."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('status field present', function () { pm.expect(pm.response.json()).to.have.property('status'); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5 Contacts",
+      "item": [
+        {
+          "name": "POST contacts findByData",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"3\":\"+45 20 12 34 56\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/v1/contacts/findByData", "host": ["{{baseUrl}}"], "path": ["v1", "contacts", "findByData"] },
+            "description": "Look up contacts by field value (here phone, field 3). Saves the first match's id to `contactId` for the addContact request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "var body = pm.response.json();",
+                  "var first = Array.isArray(body) ? body[0] : (body && body.data ? body.data[0] : null);",
+                  "if (first && first.id) { pm.collectionVariables.set('contactId', first.id); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PATCH contact by external id",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"poolId\":{{poolId}},\"data\":{\"4\":\"new@example.dk\"}}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/v1/contacts-external/ext-1001", "host": ["{{baseUrl}}"], "path": ["v1", "contacts-external", "ext-1001"] },
+            "description": "Update a contact addressed by its external (CRM) id within a pool."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST campaign addContact",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"contactId\":{{contactId}},\"status\":\"new\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/v1/campaigns/{{campaignId}}/addContact", "host": ["{{baseUrl}}"], "path": ["v1", "campaigns", "{{campaignId}}", "addContact"] },
+            "description": "Add an existing contact to a campaign as a new lead. Uses `contactId` (set by findByData, defaults to 1)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6 Field mappings",
+      "item": [
+        {
+          "name": "POST field mapping",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"name\":\"CRM contact properties\",\"mappings\":{\"1\":\"firstname\",\"2\":\"lastname\",\"3\":\"phone\",\"4\":\"email\",\"5\":\"company\"}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/v1/field-mappings", "host": ["{{baseUrl}}"], "path": ["v1", "field-mappings"] },
+            "description": "Create a mapping from dialer field ids to external property names. Saves id to `mappingId`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "var body = pm.response.json();",
+                  "if (body && body.id) { pm.collectionVariables.set('mappingId', body.id); pm.environment.set('mappingId', body.id); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET field mappings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/field-mappings", "host": ["{{baseUrl}}"], "path": ["v1", "field-mappings"] },
+            "description": "Lists all field mappings."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET field mapping by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/field-mappings/{{mappingId}}", "host": ["{{baseUrl}}"], "path": ["v1", "field-mappings", "{{mappingId}}"] },
+            "description": "Fetch the mapping created above."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT field mapping",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"mappings\":{\"1\":\"firstname\",\"2\":\"lastname\",\"3\":\"phone\",\"4\":\"email\",\"5\":\"company\",\"7\":\"city\"}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/v1/field-mappings/{{mappingId}}", "host": ["{{baseUrl}}"], "path": ["v1", "field-mappings", "{{mappingId}}"] },
+            "description": "Replace the mappings on an existing field mapping (adds field 7 -> city)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE field mapping",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/field-mappings/{{mappingId}}", "host": ["{{baseUrl}}"], "path": ["v1", "field-mappings", "{{mappingId}}"] },
+            "description": "Remove the field mapping created in this folder."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7 Webhooks",
+      "item": [
+        {
+          "name": "POST webhook",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"event\":\"lead_saved\",\"url\":\"{{baseUrl}}/hooks/receive\",\"authKey\":\"{{authKey}}\",\"template\":{\"name\":\"[1] [2]\",\"phone\":\"[3]\",\"status\":\"[status]\",\"lead\":\"[lead_id]\",\"agent\":\"[last_called_by]\"}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/v1/webhooks", "host": ["{{baseUrl}}"], "path": ["v1", "webhooks"] },
+            "description": "Register a `lead_saved` webhook pointing at the console receiver, with a payload template using `[fieldId]` and `[placeholder]` tokens. Saves id to `webhookId`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+                  "var body = pm.response.json();",
+                  "if (body && body.id) { pm.collectionVariables.set('webhookId', body.id); pm.environment.set('webhookId', body.id); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET webhooks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/webhooks", "host": ["{{baseUrl}}"], "path": ["v1", "webhooks"] },
+            "description": "Lists registered webhooks."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "GET webhook by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/webhooks/{{webhookId}}", "host": ["{{baseUrl}}"], "path": ["v1", "webhooks", "{{webhookId}}"] },
+            "description": "Fetch the webhook created above."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "PUT webhook",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"event\":\"leadClosedSuccess\"}", "options": { "raw": { "language": "json" } } },
+            "url": { "raw": "{{baseUrl}}/v1/webhooks/{{webhookId}}", "host": ["{{baseUrl}}"], "path": ["v1", "webhooks", "{{webhookId}}"] },
+            "description": "Change the event the webhook subscribes to."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST template on unsupported event (expect 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"event\":\"call_ended\",\"url\":\"{{baseUrl}}/hooks/receive\",\"template\":{\"x\":\"[1]\"}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/v1/webhooks", "host": ["{{baseUrl}}"], "path": ["v1", "webhooks"] },
+            "description": "Negative test: payload templates are only supported on lead events, so a template on `call_ended` must be rejected with 400."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 400', function () { pm.response.to.have.status(400); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE webhook",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/v1/webhooks/{{webhookId}}", "host": ["{{baseUrl}}"], "path": ["v1", "webhooks", "{{webhookId}}"] },
+            "description": "Remove the webhook created in this folder."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "8 Console (not part of the vendor API)",
+      "description": "Local console helpers served by this repo, not by the dialer API. No auth; the receiver checks `authKey` in the query string.",
+      "auth": { "type": "noauth" },
+      "item": [
+        {
+          "name": "GET console events",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/console/events", "host": ["{{baseUrl}}"], "path": ["console", "events"] },
+            "description": "Lists webhook deliveries and callbacks the console receiver has captured."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 200', function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "DELETE console events (reset demo data)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "DELETE",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/console/events", "host": ["{{baseUrl}}"], "path": ["console", "events"] },
+            "description": "Resets demo data: clears captured events and restores the seeded mock state."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST hooks receive (JSON)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"event\":\"lead_saved\",\"webhookId\":1,\"leadId\":{{leadId}},\"campaignId\":{{campaignId}},\"status\":\"success\",\"timestamp\":\"2026-01-01T00:00:00Z\",\"data\":{\"name\":\"Manual Test\"}}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hooks/receive?authKey={{authKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["hooks", "receive"],
+              "query": [{ "key": "authKey", "value": "{{authKey}}" }]
+            },
+            "description": "Simulate a webhook delivery to the console receiver with a JSON body."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST hooks receive (form-urlencoded)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "event", "value": "lead_saved", "type": "text" },
+                { "key": "leadId", "value": "{{leadId}}", "type": "text" },
+                { "key": "campaignId", "value": "{{campaignId}}", "type": "text" },
+                { "key": "status", "value": "success", "type": "text" },
+                { "key": "data[name]", "value": "Form Test", "type": "text" }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hooks/receive?authKey={{authKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["hooks", "receive"],
+              "query": [{ "key": "authKey", "value": "{{authKey}}" }]
+            },
+            "description": "Simulate a webhook delivery using application/x-www-form-urlencoded (bracket keys become nested data)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });"]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "POST hooks receive (XML)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/xml" }],
+            "body": {
+              "mode": "raw",
+              "raw": "<delivery><event>lead_saved</event><leadId>{{leadId}}</leadId><campaignId>{{campaignId}}</campaignId><status>success</status><data><name>XML Test</name></data></delivery>",
+              "options": { "raw": { "language": "xml" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/hooks/receive?authKey={{authKey}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["hooks", "receive"],
+              "query": [{ "key": "authKey", "value": "{{authKey}}" }]
+            },
+            "description": "Simulate a webhook delivery with an XML body (Content-Type application/xml)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('Status 2xx', function () { pm.expect(pm.response.code).to.be.within(200, 299); });"]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

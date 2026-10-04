@@ -1,6 +1,12 @@
-import type { Campaign, Field, Lead, Organization, Session, User } from "./types";
+import type { Campaign, Contact, Field, Lead, Organization, Pool, Session, User } from "./types";
 
 export const organization: Organization = { id: 1337, name: "Nordic Energy Sales ApS" };
+
+export const pools: Pool[] = [
+  { id: 21, name: "B2B prospects", active: true },
+  { id: 22, name: "B2C households", active: true },
+  { id: 23, name: "Do-not-call (blacklist)", active: true },
+];
 
 // Field IDs are global; campaigns pick which ones they use.
 export const fields: Field[] = [
@@ -101,6 +107,21 @@ export const buildLeads = (now = new Date()): Lead[] => {
       masterData: pairs({ 1: "Mikkel", 2: "Larsen", 3: "+45 71 23 45 67", 4: "mikkel.l@example.dk", 6: "8700", 7: "Horsens" }),
       resultData: [],
     },
+  ];
+};
+
+// Contacts mirror the seeded leads (a lead is a contact placed on a campaign)
+// plus a few pool-only contacts and one blacklist entry for dedupe demos.
+export const buildContacts = (now = new Date()): Contact[] => {
+  const d = dateFactory(now);
+  const fromLead = (l: Lead, poolId: number, ext: string | null): Contact => ({ id: l.id - 204000000 + 300000, poolId, externalId: ext, created: l.importedTime, lastModifiedTime: l.lastModifiedTime, data: l.masterData });
+  const leads = buildLeads(now);
+  return [
+    ...leads.filter((l) => l.campaignId === 412).map((l) => fromLead(l, 21, l.externalId ? `ext-${l.externalId}` : null)),
+    ...leads.filter((l) => l.campaignId === 418).map((l) => fromLead(l, 22, null)),
+    { id: 390001, poolId: 21, externalId: "ext-1001", created: d(30), lastModifiedTime: d(30), data: pairs({ 1: "Henrik", 2: "Dahl", 3: "+45 42 11 22 33", 4: "henrik@dahlbyg.dk", 5: "Dahl Byg", 6: "8200", 7: "Aarhus N" }) },
+    { id: 390002, poolId: 21, externalId: "ext-1002", created: d(30), lastModifiedTime: d(30), data: pairs({ 1: "Louise", 2: "Friis", 3: "+45 53 66 77 88", 4: "lf@friisel.dk", 5: "Friis El", 6: "8000", 7: "Aarhus" }) },
+    { id: 390101, poolId: 23, externalId: null, created: d(60), lastModifiedTime: d(60), data: pairs({ 1: "Ole", 2: "Blocked", 3: "+45 99 88 77 66" }) },
   ];
 };
 

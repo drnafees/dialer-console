@@ -9,6 +9,8 @@ export default defineConfig({
       "/v1": "http://localhost:8788",
       "/hooks": "http://localhost:8788",
       "/console": "http://localhost:8788",
+      "/integrations": "http://localhost:8788",
+      "/journeys": "http://localhost:8788",
     },
   },
 });

@@ -137,5 +137,179 @@ export interface ReceivedEvent {
 }
 
 export interface Meta {
-  pagination: { page: number; pageCount: number; pageSize: number; total: number };
+  pagination: { page: number; pageCount: number; pageSize: number; total: number; firstUrl?: string; previousUrl?: string | null; nextUrl?: string | null; lastUrl?: string };
+}
+
+// ---------------------------------------------------------------------------
+// Contacts, pools, imports, field mappings (the onboarding half of the spec)
+// ---------------------------------------------------------------------------
+
+export interface Pool {
+  id: number;
+  name: string;
+  active: boolean;
+}
+
+// A contact lives in a pool. A lead is a contact placed on a campaign.
+export interface Contact {
+  id: number;
+  poolId: number;
+  externalId: string | null;
+  created: string;
+  lastModifiedTime: string;
+  data: DataPair[];
+}
+
+export const ImportCreateSchema = z.object({
+  poolId: z.coerce.number().int(),
+  match: z.object({ fields: z.array(z.coerce.number().int()).default([]), blacklist: z.array(z.coerce.number().int()).default([]) }).default({ fields: [], blacklist: [] }),
+  updateFields: z.array(z.coerce.number().int()).default([]),
+  onImportedAction: z.object({ type: z.literal("addToCampaign"), campaignId: z.coerce.number().int() }).optional(),
+  callbackUrl: z.string().url().optional(),
+  processing: z.object({ bloctel: z.boolean().optional() }).optional(),
+});
+export type ImportCreate = z.infer<typeof ImportCreateSchema>;
+
+export const ImportInsertSchema = z.array(z.object({ data: z.record(z.string(), z.coerce.string()) })).min(1);
+
+export type ImportStatus = "created" | "queued" | "processing" | "completed" | "failed";
+
+export interface ImportJob extends ImportCreate {
+  id: number;
+  status: ImportStatus;
+  created: string;
+  started: string | null;
+  completed: string | null;
+  rows: Record<string, string>[];
+  result: { inserted: number; updated: number; duplicates: number; addedToCampaign: number; errors: string[] } | null;
+}
+
+export const FieldMappingWriteSchema = z.object({
+  name: z.string().min(1),
+  mappings: z.record(z.string(), z.string()),
+});
+export type FieldMappingWrite = z.infer<typeof FieldMappingWriteSchema>;
+
+export interface FieldMapping extends FieldMappingWrite {
+  id: number;
+  lastUpdated: string;
+}
+
+export const ContactWriteSchema = z.object({
+  poolId: z.coerce.number().int(),
+  externalId: z.string().nullable().optional(),
+  data: z.record(z.string(), z.coerce.string()),
+});
+
+export const ContactPatchSchema = z.object({
+  poolId: z.coerce.number().int().optional(),
+  externalId: z.string().nullable().optional(),
+  data: z.record(z.string(), z.coerce.string()).optional(),
+});
+
+export const AddContactSchema = z.object({
+  contactId: z.coerce.number().int(),
+  status: z.enum(LEAD_STATUSES).default("new"),
+});
+
+// ---------------------------------------------------------------------------
+// Integration toolkit (the console's side, not the vendor API)
+// ---------------------------------------------------------------------------
+
+// Normalised view of any inbound webhook, whatever the wire format was.
+export type WireFormat = "json" | "form" | "xml";
+
+export interface InboundDelivery {
+  id: string;
+  idempotencyKey: string;
+  receivedAt: string;
+  format: WireFormat;
+  authKeyValid: boolean;
+  duplicate: boolean;
+  payload: WebhookDelivery;
+  raw: string;
+  forward: { status: "pending" | "delivered" | "failed" | "dead" | "skipped"; attempts: number; lastError: string | null; nextAttemptAt: string | null; deliveredAt: string | null };
+}
+
+export interface ForwardAttempt {
+  id: string;
+  deliveryId: string;
+  attempt: number;
+  at: string;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+  durationMs: number;
+}
+
+export interface CrmRecord {
+  id: string;
+  externalId: string | null;
+  dialerLeadId: number | null;
+  properties: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+  source: "sync" | "webhook" | "manual";
+}
+
+export interface ConnectorConfig {
+  fieldMappingId: number | null;
+  direction: "dialer_to_crm" | "two_way";
+  conflictPolicy: "last_write_wins" | "dialer_wins" | "crm_wins";
+  campaignIds: number[];
+  overlapSeconds: number;
+  pageSize: number;
+}
+
+export interface SyncRun {
+  id: string;
+  startedAt: string;
+  finishedAt: string | null;
+  dryRun: boolean;
+  cursorBefore: string;
+  cursorAfter: string | null;
+  pagesFetched: number;
+  requestsMade: number;
+  rowsFetched: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  rateLimitWaitsMs: number;
+  status: "running" | "completed" | "failed";
+  error: string | null;
+  preview: { leadId: number; action: "create" | "update" | "skip"; properties: Record<string, string>; reason?: string }[];
+}
+
+export interface RequestLogEntry {
+  id: string;
+  at: string;
+  method: string;
+  path: string;
+  query: string;
+  status: number;
+  durationMs: number;
+  rateLimitRemaining: number;
+  emitted: string[];
+}
+
+export interface JourneyTrigger {
+  id: string;
+  name: string;
+  token: string;
+  resource: "leads" | "contacts";
+  matchOn: "leadId" | "externalId" | "phone";
+  fieldMap: Record<string, string>; // inbound key -> dialer field id or "status"
+  created: string;
+}
+
+export interface JourneyRunLog {
+  id: string;
+  triggerId: string;
+  at: string;
+  authorized: boolean;
+  matched: number | null;
+  applied: Record<string, string>;
+  error: string | null;
+  body: unknown;
 }
