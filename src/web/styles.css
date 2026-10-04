@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+/* Palette: indigo primary, coral CTA, blue accent, green success,
+   neutral greys, 20px cards, pill buttons, geometric sans. */
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-indigo-brand: #3639a4;
+  --color-indigo-deep: #2b2e94;
+  --color-indigo-soft: #eceefb;
+  --color-coral: #ff7364;
+  --color-coral-dark: #f86150;
+  --color-coral-soft: #fff0ee;
+  --color-accent: #356cfa;
+  --color-accent-soft: #eaf0ff;
+  --color-green: #00b67a;
+  --color-green-soft: #e6f8f1;
+  --color-amber: #f5a623;
+  --color-amber-soft: #fff6e5;
+  --color-ink: #000000;
+  --color-ink-2: #181c2f;
+  --color-grey: #8b91a0;
+  --color-grey-2: #5f6570;
+  --color-line: #e0e2e6;
+  --color-line-2: #ebecef;
+  --color-paper: #fafafb;
+  --color-paper-2: #f2f4f7;
+
+  --shadow-card: 0 4px 24px rgba(32, 32, 32, 0.07);
+  --shadow-card-hover: 0 10px 32px rgba(32, 32, 32, 0.1);
+  --radius-card: 20px;
+}
+
+@layer base {
+  html {
+    font-size: 17px;
+  }
+  body {
+    @apply bg-white font-sans font-light text-ink antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-bold tracking-tight text-ink;
+  }
+  code {
+    @apply rounded-md bg-paper-2 px-1.5 py-0.5 font-mono text-[0.8em] font-normal text-indigo-brand;
+  }
+  pre code {
+    @apply block overflow-x-auto rounded-xl bg-ink-2 p-5 text-[13px] leading-relaxed text-white;
+  }
+}
+
+@layer components {
+  .container-x {
+    @apply mx-auto w-full max-w-6xl px-6;
+  }
+  .card {
+    @apply rounded-[var(--radius-card)] border border-line bg-white p-6 shadow-[var(--shadow-card)];
+  }
+  .card-hover {
+    @apply transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-card-hover)];
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-full border px-6 py-3 text-[15px] font-semibold leading-none transition disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-coral {
+    @apply border-coral bg-coral text-white hover:border-coral-dark hover:bg-coral-dark;
+  }
+  .btn-indigo {
+    @apply border-indigo-brand bg-indigo-brand text-white hover:bg-indigo-deep;
+  }
+  .btn-outline {
+    @apply border-indigo-brand bg-transparent text-indigo-brand hover:bg-indigo-brand hover:text-white;
+  }
+  .btn-ghost {
+    @apply border-line bg-white text-ink-2 hover:border-grey;
+  }
+  .btn-sm {
+    @apply px-4 py-2 text-[13px];
+  }
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold;
+  }
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.14em] text-indigo-brand;
+  }
+  .nav-link {
+    @apply inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-[15px] font-normal text-ink-2 transition hover:bg-indigo-soft hover:text-indigo-brand;
+  }
+  .nav-link[aria-current="page"] {
+    @apply bg-indigo-soft font-semibold text-indigo-brand;
+  }
+  .icon {
+    @apply inline-block h-[18px] w-[18px] shrink-0 align-middle;
+  }
+  .icon-box {
+    @apply grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-soft text-indigo-brand;
+  }
+  .table-head {
+    @apply text-left text-xs font-semibold uppercase tracking-wider text-grey;
+  }
+  .lead {
+    @apply text-lg font-light leading-relaxed text-grey-2;
+  }
+  .input {
+    @apply w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[15px] font-normal text-ink outline-none transition focus:border-indigo-brand focus:ring-2 focus:ring-indigo-soft;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-grey;
+  }
+  .step {
+    @apply grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-brand text-sm font-bold text-white;
+  }
+  .row-btn {
+    @apply rounded-full px-3 py-1.5 text-xs font-semibold text-indigo-brand transition hover:bg-indigo-soft;
+  }
+}
+

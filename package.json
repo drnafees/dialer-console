@@ -1,0 +1,30 @@
+{
+  "name": "dialer-console",
+  "version": "1.0.0",
+  "description": "Single-page console on top of a mock dialer REST API (Basic auth, JSON filters, pagination, webhooks). Cloudflare Pages + Functions + KV.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "npm run build && wrangler pages dev dist --kv CONSOLE_KV --port 8788",
+    "deploy": "npm run build && wrangler pages deploy dist --project-name dialer-console",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.functions.json --noEmit"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "lucide": "^1.51.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261003.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.4",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.147.0"
+  }
+}

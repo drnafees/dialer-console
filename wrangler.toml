@@ -1,0 +1,8 @@
+name = "dialer-console"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-09-01"
+
+# KV holds the mock API data (leads, webhooks) and the console event log.
+# The CONSOLE_KV binding is configured in the Cloudflare dashboard
+# (Settings → Bindings → KV namespace), not here. Local dev passes
+# --kv CONSOLE_KV on the command line.
