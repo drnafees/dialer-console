@@ -3,7 +3,7 @@
 Cloudflare Pages project: console (`src/web`) over a mock dialer REST API served by Pages Functions (`functions/v1/[[path]].ts`), plus an integration toolkit (`functions/integrations`, `functions/journeys`, `functions/_lib`), all sharing pure code in `src/core`.
 
 ## Commands
-- `npm run preview` builds and serves page + API + local KV on :8788. `npm test`, `npm run typecheck`, `npm run build`.
+- `npm run preview` builds and serves page + API + local KV on :8788. KV binding comes from `wrangler.toml`; placeholder ids are fine locally, real ids are needed for deploy. `npm test`, `npm run typecheck`, `npm run build`.
 - Only one project exists: this directory. Do not create sibling projects.
 - Before `wrangler pages dev`, kill stray `workerd` processes (`pkill -9 -x workerd`); they outlive wrangler and hold ports.
 - Two tsconfigs (browser vs workers-types); `src/core` must compile under both, so no DOM or Node APIs there.

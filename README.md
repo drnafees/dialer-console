@@ -91,6 +91,19 @@ test/                        36 tests
 
 ## Deploy
 
-Cloudflare dashboard → Workers & Pages → Create → **Pages** → Connect to Git. Build command `npm run build`, output `dist`. After the first deploy, Settings → Bindings → add a KV namespace with variable name `CONSOLE_KV`, then retry the deployment.
+Bindings are declared in `wrangler.toml` (it sets `pages_build_output_dir`, so Cloudflare treats the file as the source of truth and the dashboard's Settings → Bindings is read-only).
+
+1. Create the two KV namespaces once:
+
+   ```bash
+   npx wrangler login
+   npx wrangler kv namespace create CONSOLE_KV            # production
+   npx wrangler kv namespace create CONSOLE_KV --preview  # preview branches
+   ```
+
+2. Paste the printed ids into `wrangler.toml` as `id` and `preview_id` under `[[kv_namespaces]]` and commit.
+3. Cloudflare dashboard → Workers & Pages → Create → **Pages** → Connect to Git. Build command `npm run build`, output `dist`. Or from the CLI: `npm run deploy`.
+
+Local dev needs no account: `wrangler pages dev` reads the binding from `wrangler.toml` and backs it with a local emulator in `.wrangler/`.
 
 MIT. Independent portfolio project; no vendor affiliation.

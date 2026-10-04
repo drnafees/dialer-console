@@ -2,7 +2,21 @@ name = "dialer-console"
 pages_build_output_dir = "dist"
 compatibility_date = "2025-09-01"
 
-# KV holds the mock API data (leads, webhooks) and the console event log.
-# The CONSOLE_KV binding is configured in the Cloudflare dashboard
-# (Settings → Bindings → KV namespace), not here. Local dev passes
-# --kv CONSOLE_KV on the command line.
+# Because pages_build_output_dir is set, Cloudflare treats this file as the
+# source of truth for bindings; the dashboard's Settings → Bindings is read-only.
+#
+# KV holds the mock API data (leads, contacts, imports, webhooks) and the
+# toolkit's logs (deliveries, CRM records, sync runs, request log).
+#
+# One-time setup (needs `wrangler login`):
+#   npx wrangler kv namespace create CONSOLE_KV
+#   npx wrangler kv namespace create CONSOLE_KV --preview
+# then paste the two ids below and redeploy.
+#
+# Local dev (`npm run preview`) uses the preview_id with a local emulator; no
+# account access is needed for that.
+
+[[kv_namespaces]]
+binding = "CONSOLE_KV"
+id = "REPLACE_WITH_PRODUCTION_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_PREVIEW_NAMESPACE_ID"
