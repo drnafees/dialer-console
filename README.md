@@ -46,7 +46,7 @@ curl -H "$AUTH" -H 'Content-Type: application/json' -X POST localhost:8788/v1/im
 curl -H "$AUTH" -X POST localhost:8788/v1/imports/<id>/start
 ```
 
-`npm test` (36 tests), `npm run typecheck`, `npm run build`. Import `postman/` into Postman for a 40-request collection covering every route.
+`npm test`, `npm run typecheck`, `npm run build`. Import `postman/` into Postman for a 40-request collection covering every route.
 
 ## Mock API routes
 
@@ -86,7 +86,7 @@ functions/hooks/receive.ts   the page's webhook receiver
 functions/console/events.ts  received-event log; DELETE resets demo data
 src/web/main.ts              demo page + routing
 src/web/toolkit.ts           the toolkit tabs
-test/                        36 tests
+test/                        unit tests: router, import pipeline, sync engine, receiver, KV store
 ```
 
 ## Deploy

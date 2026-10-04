@@ -6,7 +6,7 @@ export { EXPECTED_AUTH_KEY } from "../_lib/receiver";
 // The console's own webhook endpoint. Accepts JSON, application/x-www-form-urlencoded
 // and XML; verifies ?authKey=; dedupes; forwards to the CRM with retries.
 // ?failTimes=N makes the first N forward attempts fail (demo of the retry path).
-export const onRequestPost = async ({ request, env }: EventContext<Env, string, unknown>): Promise<Response> => {
+export const onRequestPost = async ({ request, env, waitUntil }: EventContext<Env, string, unknown>): Promise<Response> => {
   const url = new URL(request.url);
   const store = new KvStore(env.CONSOLE_KV);
   await store.ensureSeeded();
@@ -17,5 +17,6 @@ export const onRequestPost = async ({ request, env }: EventContext<Env, string, 
     origin: url.origin,
     failTimes: Number(url.searchParams.get("failTimes") ?? "0") || 0,
   });
+  if (result.background) waitUntil(result.background);
   return json(result.body, result.status);
 };

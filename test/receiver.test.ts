@@ -12,9 +12,21 @@ describe("receiver parsing", () => {
   });
 
   it("normalises JSON, form (with bracket keys) and XML to the same envelope", () => {
-    const json = normalizeDelivery(parseBody("json", '{"event":"lead_saved","leadId":204179334,"campaignId":412,"status":"success","timestamp":"2026-01-01T00:00:00Z","data":{"name":"Peter Holm"}}'));
-    const form = normalizeDelivery(parseBody("form", "event=lead_saved&leadId=204179334&campaignId=412&status=success&timestamp=2026-01-01T00%3A00%3A00Z&data%5Bname%5D=Peter+Holm"));
-    const xml = normalizeDelivery(parseBody("xml", "<delivery><event>lead_saved</event><leadId>204179334</leadId><campaignId>412</campaignId><status>success</status><timestamp>2026-01-01T00:00:00Z</timestamp><data><name>Peter Holm</name></data></delivery>"));
+    const json = normalizeDelivery(
+      parseBody(
+        "json",
+        '{"event":"lead_saved","leadId":204179334,"campaignId":412,"status":"success","timestamp":"2026-01-01T00:00:00Z","data":{"name":"Peter Holm"}}',
+      ),
+    );
+    const form = normalizeDelivery(
+      parseBody("form", "event=lead_saved&leadId=204179334&campaignId=412&status=success&timestamp=2026-01-01T00%3A00%3A00Z&data%5Bname%5D=Peter+Holm"),
+    );
+    const xml = normalizeDelivery(
+      parseBody(
+        "xml",
+        "<delivery><event>lead_saved</event><leadId>204179334</leadId><campaignId>412</campaignId><status>success</status><timestamp>2026-01-01T00:00:00Z</timestamp><data><name>Peter Holm</name></data></delivery>",
+      ),
+    );
     expect(form).toEqual(json);
     expect(xml).toEqual(json);
     expect(json.data).toEqual({ name: "Peter Holm" });

@@ -25,7 +25,10 @@ describe("authentication", () => {
 
 describe("list endpoints", () => {
   it("applies JSON filters with $eq and $gt", async () => {
-    const res = await handle(req("GET", "/leads", { query: { filters: JSON.stringify({ campaignId: { $eq: 412 }, contactAttempts: { $gt: 1 } }) } }), new MemoryStore());
+    const res = await handle(
+      req("GET", "/leads", { query: { filters: JSON.stringify({ campaignId: { $eq: 412 }, contactAttempts: { $gt: 1 } }) } }),
+      new MemoryStore(),
+    );
     const leads = res.body as Lead[];
     expect(leads.length).toBeGreaterThan(0);
     expect(leads.every((l) => l.campaignId === 412 && l.contactAttempts > 1)).toBe(true);
@@ -43,7 +46,12 @@ describe("list endpoints", () => {
     const body = res.body as { meta: { pagination: { page: number; pageCount: number; total: number } }; leads: Lead[] };
     expect(body.meta.pagination).toMatchObject({ page: 2, pageCount: 3, total: 8 });
     expect(body.leads).toHaveLength(3);
-    expect(body.leads[0]!.id).toBe(seed.buildLeads().map((l) => l.id).sort((a, b) => a - b)[3]);
+    expect(body.leads[0]!.id).toBe(
+      seed
+        .buildLeads()
+        .map((l) => l.id)
+        .sort((a, b) => a - b)[3],
+    );
   });
 
   it("matchesFilters compares datetimes as ISO strings", () => {
@@ -56,7 +64,10 @@ describe("leads", () => {
   it("merges masterData/resultData pairs on PUT and bumps lastModifiedTime", async () => {
     const store = new MemoryStore();
     const before = (await store.getLead(204179334))!;
-    const res = await handle(req("PUT", "/leads/204179334", { body: { masterData: [{ id: 4, value: "peter@holm.dk" }], resultData: [{ id: 20, value: "Solar" }] } }), store);
+    const res = await handle(
+      req("PUT", "/leads/204179334", { body: { masterData: [{ id: 4, value: "peter@holm.dk" }], resultData: [{ id: 20, value: "Solar" }] } }),
+      store,
+    );
     expect(res.status).toBe(200);
     const after = (await store.getLead(204179334))!;
     expect(after.masterData.find((p) => p.id === 4)?.value).toBe("peter@holm.dk");
@@ -86,7 +97,18 @@ describe("leads", () => {
 
   it("creates a lead with POST, returns {id} and emits leads_inserted", async () => {
     const store = new MemoryStore();
-    const res = await handle(req("POST", "/leads", { body: { campaignId: 418, masterData: [{ id: 1, value: "Test" }, { id: 3, value: "+45 11 11 11 11" }] } }), store);
+    const res = await handle(
+      req("POST", "/leads", {
+        body: {
+          campaignId: 418,
+          masterData: [
+            { id: 1, value: "Test" },
+            { id: 3, value: "+45 11 11 11 11" },
+          ],
+        },
+      }),
+      store,
+    );
     expect(res.status).toBe(200);
     const { id } = res.body as { id: number };
     expect((await store.getLead(id))?.status).toBe("new");

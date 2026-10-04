@@ -1,3 +1,4 @@
+import { ID_RANGES, type IdKind } from "../../src/core/data";
 import type { Store } from "../../src/core/mock-api";
 import * as seed from "../../src/core/seed";
 import type {
@@ -25,9 +26,19 @@ const MAX_LOG = 200;
 
 // A "table" in KV: an index key holding an array of ids plus one key per row.
 class Collection<T, K extends string | number> {
-  constructor(private readonly kv: KVNamespace, private readonly prefix: string, private readonly idOf: (row: T) => K, private readonly newestFirst = false, private readonly cap?: number) {}
-  private get indexKey() { return `${this.prefix}:index`; }
-  async ids(): Promise<K[]> { return JSON.parse((await this.kv.get(this.indexKey)) ?? "[]") as K[]; }
+  constructor(
+    private readonly kv: KVNamespace,
+    private readonly prefix: string,
+    private readonly idOf: (row: T) => K,
+    private readonly newestFirst = false,
+    private readonly cap?: number,
+  ) {}
+  private get indexKey() {
+    return `${this.prefix}:index`;
+  }
+  async ids(): Promise<K[]> {
+    return JSON.parse((await this.kv.get(this.indexKey)) ?? "[]") as K[];
+  }
   async get(id: K): Promise<T | null> {
     const raw = await this.kv.get(`${this.prefix}:${id}`);
     return raw ? (JSON.parse(raw) as T) : null;
@@ -44,6 +55,13 @@ class Collection<T, K extends string | number> {
     const next = this.newestFirst ? [id, ...ids] : [...ids, id];
     await this.kv.put(this.indexKey, JSON.stringify(this.cap ? next.slice(0, this.cap) : next));
   }
+  // Bulk insert with a single index write (used by seeding).
+  async putMany(rows: T[]): Promise<void> {
+    await Promise.all(rows.map((r) => this.kv.put(`${this.prefix}:${this.idOf(r)}`, JSON.stringify(r))));
+    const ids = await this.ids();
+    const next = [...ids, ...rows.map(this.idOf).filter((id) => !ids.includes(id))];
+    await this.kv.put(this.indexKey, JSON.stringify(this.cap ? next.slice(0, this.cap) : next));
+  }
   async delete(id: K): Promise<void> {
     await this.kv.delete(`${this.prefix}:${id}`);
     await this.kv.put(this.indexKey, JSON.stringify((await this.ids()).filter((x) => x !== id)));
@@ -54,7 +72,14 @@ class Collection<T, K extends string | number> {
   }
 }
 
-const DEFAULT_CONNECTOR: ConnectorConfig = { fieldMappingId: null, direction: "dialer_to_crm", conflictPolicy: "last_write_wins", campaignIds: [], overlapSeconds: 300, pageSize: 100 };
+const DEFAULT_CONNECTOR: ConnectorConfig = {
+  fieldMappingId: null,
+  direction: "dialer_to_crm",
+  conflictPolicy: "last_write_wins",
+  campaignIds: [],
+  overlapSeconds: 300,
+  pageSize: 100,
+};
 
 // Leads, contacts, imports, webhooks and mappings are mutable, so they live in
 // KV; organisation, fields, campaigns, users, pools and sessions come from seed.
@@ -92,8 +117,8 @@ export class KvStore implements Store {
 
   async ensureSeeded(): Promise<void> {
     if (await this.kv.get("seeded")) return;
-    for (const l of seed.buildLeads()) await this.leads.put(l);
-    for (const c of seed.buildContacts()) await this.contacts.put(c);
+    await this.leads.putMany(seed.buildLeads());
+    await this.contacts.putMany(seed.buildContacts());
     await this.kv.put("seeded", new Date().toISOString());
   }
 
@@ -108,38 +133,96 @@ export class KvStore implements Store {
   }
 
   // ---- Store interface (used by the pure router) ----
-  listLeads() { return this.leads.list(); }
-  getLead(id: number) { return this.leads.get(id); }
-  putLead(lead: Lead) { return this.leads.put(lead); }
-  deleteLead(id: number) { return this.leads.delete(id); }
-  listWebhooks() { return this.webhooks.list(); }
-  putWebhook(w: Webhook) { return this.webhooks.put(w); }
-  deleteWebhook(id: number) { return this.webhooks.delete(id); }
-  listContacts() { return this.contacts.list(); }
-  getContact(id: number) { return this.contacts.get(id); }
-  putContact(c: Contact) { return this.contacts.put(c); }
-  deleteContact(id: number) { return this.contacts.delete(id); }
-  listImports() { return this.imports.list(); }
-  getImport(id: number) { return this.imports.get(id); }
-  putImport(j: ImportJob) { return this.imports.put(j); }
-  listFieldMappings() { return this.fieldMappings.list(); }
-  putFieldMapping(m: FieldMapping) { return this.fieldMappings.put(m); }
-  deleteFieldMapping(id: number) { return this.fieldMappings.delete(id); }
+  listLeads() {
+    return this.leads.list();
+  }
+  getLead(id: number) {
+    return this.leads.get(id);
+  }
+  putLead(lead: Lead) {
+    return this.leads.put(lead);
+  }
+  deleteLead(id: number) {
+    return this.leads.delete(id);
+  }
+  listWebhooks() {
+    return this.webhooks.list();
+  }
+  putWebhook(w: Webhook) {
+    return this.webhooks.put(w);
+  }
+  deleteWebhook(id: number) {
+    return this.webhooks.delete(id);
+  }
+  listContacts() {
+    return this.contacts.list();
+  }
+  getContact(id: number) {
+    return this.contacts.get(id);
+  }
+  putContact(c: Contact) {
+    return this.contacts.put(c);
+  }
+  deleteContact(id: number) {
+    return this.contacts.delete(id);
+  }
+  listImports() {
+    return this.imports.list();
+  }
+  getImport(id: number) {
+    return this.imports.get(id);
+  }
+  putImport(j: ImportJob) {
+    return this.imports.put(j);
+  }
+  listFieldMappings() {
+    return this.fieldMappings.list();
+  }
+  putFieldMapping(m: FieldMapping) {
+    return this.fieldMappings.put(m);
+  }
+  deleteFieldMapping(id: number) {
+    return this.fieldMappings.delete(id);
+  }
+
+  // KV has no atomic increment. Writes within one request are sequential so
+  // this is safe for the mock; a Durable Object would make it safe under
+  // concurrent writers.
+  async nextId(kind: IdKind): Promise<number> {
+    const key = `seq:${kind}`;
+    const next = Number((await this.kv.get(key)) ?? String(ID_RANGES[kind])) + 1;
+    await this.kv.put(key, String(next));
+    return next;
+  }
 
   // ---- console event log (kept for the simple front page) ----
-  pushEvent(e: ReceivedEvent) { return this.events.put(e); }
-  listEvents() { return this.events.list(); }
+  pushEvent(e: ReceivedEvent) {
+    return this.events.put(e);
+  }
+  listEvents() {
+    return this.events.list();
+  }
 
   // ---- toolkit scalars ----
   async getConnector(): Promise<ConnectorConfig> {
     const raw = await this.kv.get("connector");
     return raw ? { ...DEFAULT_CONNECTOR, ...(JSON.parse(raw) as Partial<ConnectorConfig>) } : DEFAULT_CONNECTOR;
   }
-  putConnector(c: ConnectorConfig) { return this.kv.put("connector", JSON.stringify(c)); }
-  async getCursor(): Promise<string | null> { return this.kv.get("sync:cursor"); }
-  putCursor(iso: string) { return this.kv.put("sync:cursor", iso); }
-  async hasIdempotencyKey(key: string): Promise<boolean> { return (await this.kv.get(`idem:${key}`)) !== null; }
-  putIdempotencyKey(key: string, deliveryId: string) { return this.kv.put(`idem:${key}`, deliveryId, { expirationTtl: 7 * 24 * 3600 }); }
+  putConnector(c: ConnectorConfig) {
+    return this.kv.put("connector", JSON.stringify(c));
+  }
+  async getCursor(): Promise<string | null> {
+    return this.kv.get("sync:cursor");
+  }
+  putCursor(iso: string) {
+    return this.kv.put("sync:cursor", iso);
+  }
+  async hasIdempotencyKey(key: string): Promise<boolean> {
+    return (await this.kv.get(`idem:${key}`)) !== null;
+  }
+  putIdempotencyKey(key: string, deliveryId: string) {
+    return this.kv.put(`idem:${key}`, deliveryId, { expirationTtl: 7 * 24 * 3600 });
+  }
 }
 
 export function json(data: unknown, status = 200, headers: Record<string, string> = {}): Response {

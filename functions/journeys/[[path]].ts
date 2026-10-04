@@ -55,7 +55,16 @@ export const onRequest = async ({ request, env }: EventContext<Env, "path", unkn
     } catch {
       return json({ error: "Body is not valid JSON" }, 400);
     }
-    const log: JourneyRunLog = { id: crypto.randomUUID(), triggerId: trigger.id, at: new Date().toISOString(), authorized, matched: null, applied: {}, error: null, body };
+    const log: JourneyRunLog = {
+      id: crypto.randomUUID(),
+      triggerId: trigger.id,
+      at: new Date().toISOString(),
+      authorized,
+      matched: null,
+      applied: {},
+      error: null,
+      body,
+    };
     if (!authorized) {
       log.error = "Unauthorized: expected Authorization: Bearer <token>";
       await store.journeyRuns.put(log);
@@ -63,13 +72,17 @@ export const onRequest = async ({ request, env }: EventContext<Env, "path", unkn
     }
 
     // Match the request to a lead.
-    const leads = await store.listLeads();
+    // Match by primary key when we have one; otherwise scan (a real system
+    // would use findByData or an indexed lookup here).
     let lead = null;
-    if (trigger.matchOn === "leadId") lead = leads.find((l) => l.id === Number(body.leadId)) ?? null;
-    else if (trigger.matchOn === "externalId") lead = leads.find((l) => String(l.externalId) === String(body.externalId)) ?? null;
+    if (trigger.matchOn === "leadId") lead = Number.isInteger(Number(body.leadId)) ? await store.getLead(Number(body.leadId)) : null;
     else {
-      const phone = normalizePhone(String(body.phone ?? body.updatedPhone ?? ""));
-      lead = leads.find((l) => normalizePhone(l.masterData.find((p) => p.id === 3)?.value ?? "") === phone) ?? null;
+      const leads = await store.listLeads();
+      if (trigger.matchOn === "externalId") lead = leads.find((l) => l.externalId !== null && String(l.externalId) === String(body.externalId)) ?? null;
+      else {
+        const phone = normalizePhone(String(body.phone ?? body.updatedPhone ?? ""));
+        lead = phone ? (leads.find((l) => normalizePhone(l.masterData.find((p) => p.id === 3)?.value ?? "") === phone) ?? null) : null;
+      }
     }
     if (!lead) {
       log.error = `No lead matched on ${trigger.matchOn}`;
@@ -96,7 +109,10 @@ export const onRequest = async ({ request, env }: EventContext<Env, "path", unkn
       log.applied[seed.fields.find((f) => f.id === id)!.name] = String(v);
     }
     if (status) log.applied.status = status;
-    const res = await handle({ method: "PUT", path: `/leads/${lead.id}`, query: {}, body: { masterData, ...(status ? { status } : {}) }, authorization: DEMO_AUTH }, store);
+    const res = await handle(
+      { method: "PUT", path: `/leads/${lead.id}`, query: {}, body: { masterData, ...(status ? { status } : {}) }, authorization: DEMO_AUTH },
+      store,
+    );
     await store.journeyRuns.put(log);
     return json({ matched: lead.id, applied: log.applied, result: res.body, note: "Webhooks for lead_saved fire as usual; see Deliveries." }, res.status);
   }

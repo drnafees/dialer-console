@@ -48,13 +48,26 @@ export async function planUpsert(store: KvStore, lead: Lead, mapping: FieldMappi
   const externalId = lead.externalId === null ? null : `ext-${lead.externalId}`;
   const existing = await findCrmRecord(store, lead.id, externalId);
   const now = new Date().toISOString();
-  if (!existing) return { action: "create", record: { id: crypto.randomUUID(), externalId, dialerLeadId: lead.id, properties, createdAt: now, updatedAt: now, source } };
+  if (!existing)
+    return { action: "create", record: { id: crypto.randomUUID(), externalId, dialerLeadId: lead.id, properties, createdAt: now, updatedAt: now, source } };
 
   const changed = Object.entries(properties).some(([k, v]) => existing.properties[k] !== v);
   if (!changed) return { action: "skip", reason: "no changes", record: existing };
-  if (cfg.conflictPolicy === "crm_wins" && existing.source === "manual") return { action: "skip", reason: "conflict policy crm_wins: record was edited in CRM", record: existing };
-  if (cfg.conflictPolicy === "last_write_wins" && existing.updatedAt > lead.lastModifiedTime && existing.source === "manual") return { action: "skip", reason: "conflict policy last_write_wins: CRM edit is newer", record: existing };
-  return { action: "update", record: { ...existing, dialerLeadId: lead.id, externalId: externalId ?? existing.externalId, properties: { ...existing.properties, ...properties }, updatedAt: now, source } };
+  if (cfg.conflictPolicy === "crm_wins" && existing.source === "manual")
+    return { action: "skip", reason: "conflict policy crm_wins: record was edited in CRM", record: existing };
+  if (cfg.conflictPolicy === "last_write_wins" && existing.updatedAt > lead.lastModifiedTime && existing.source === "manual")
+    return { action: "skip", reason: "conflict policy last_write_wins: CRM edit is newer", record: existing };
+  return {
+    action: "update",
+    record: {
+      ...existing,
+      dialerLeadId: lead.id,
+      externalId: externalId ?? existing.externalId,
+      properties: { ...existing.properties, ...properties },
+      updatedAt: now,
+      source,
+    },
+  };
 }
 
 export async function upsertLead(store: KvStore, lead: Lead, mapping: FieldMapping | null, source: CrmRecord["source"]): Promise<UpsertPlan> {

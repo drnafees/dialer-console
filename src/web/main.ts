@@ -104,7 +104,12 @@ function renderDemo(): void {
 
   $("#hook-form").onsubmit = async (e) => {
     e.preventDefault();
-    await api!.createWebhook({ event: $<HTMLSelectElement>("#hook-event").value as never, url: $<HTMLInputElement>("#hook-url").value, authKey: "console-secret", template: { name: "[1] [2]", phone: "[3]", status: "[status]", lead: "[lead_id]", agent: "[last_called_by]" } });
+    await api!.createWebhook({
+      event: $<HTMLSelectElement>("#hook-event").value as never,
+      url: $<HTMLInputElement>("#hook-url").value,
+      authKey: "console-secret",
+      template: { name: "[1] [2]", phone: "[3]", status: "[status]", lead: "[lead_id]", agent: "[last_called_by]" },
+    });
     await loadHooks();
   };
 
@@ -138,7 +143,12 @@ async function loadLeads(): Promise<void> {
 async function loadHooks(): Promise<void> {
   const hooks = await api!.webhooks();
   $("#hooks").innerHTML = hooks.length
-    ? hooks.map((w) => `<li class="flex items-center gap-3 py-2"><span class="badge bg-indigo-soft text-indigo-brand">${esc(w.event)}</span><span class="flex-1 truncate font-mono text-xs">${esc(w.url)}</span><button class="text-xs text-coral-dark" data-del="${w.id}">Delete</button></li>`).join("")
+    ? hooks
+        .map(
+          (w) =>
+            `<li class="flex items-center gap-3 py-2"><span class="badge bg-indigo-soft text-indigo-brand">${esc(w.event)}</span><span class="flex-1 truncate font-mono text-xs">${esc(w.url)}</span><button class="text-xs text-coral-dark" data-del="${w.id}">Delete</button></li>`,
+        )
+        .join("")
     : `<li class="py-2 text-grey">None yet. Register one, then change a lead status above.</li>`;
   for (const btn of $$<HTMLButtonElement>("[data-del]")) {
     btn.onclick = async () => {
@@ -151,7 +161,12 @@ async function loadHooks(): Promise<void> {
 async function loadEvents(): Promise<void> {
   const events = await consoleApi.events();
   $("#events").innerHTML = events.length
-    ? events.map((e) => `<li><details class="rounded-xl border border-line p-3"><summary class="flex cursor-pointer items-center gap-3">${statusBadge(e.payload.event)}<span>lead ${e.payload.leadId}</span><span class="ml-auto text-xs ${e.authKeyValid ? "text-green" : "text-coral-dark"}">${e.authKeyValid ? "authKey ok" : "authKey wrong"}</span></summary>${pre(e.payload)}</details></li>`).join("")
+    ? events
+        .map(
+          (e) =>
+            `<li><details class="rounded-xl border border-line p-3"><summary class="flex cursor-pointer items-center gap-3">${statusBadge(e.payload.event)}<span>lead ${e.payload.leadId}</span><span class="ml-auto text-xs ${e.authKeyValid ? "text-green" : "text-coral-dark"}">${e.authKeyValid ? "authKey ok" : "authKey wrong"}</span></summary>${pre(e.payload)}</details></li>`,
+        )
+        .join("")
     : `<li class="text-grey">Nothing yet.</li>`;
 }
 
@@ -173,7 +188,8 @@ async function route(): Promise<void> {
   for (const a of $$<HTMLAnchorElement>("#nav a")) a.toggleAttribute("aria-current", a.getAttribute("href") === hash);
   if (hash === "#demo") return renderDemo();
   if (!api) {
-    $("#view").innerHTML = `<div class="card mx-auto max-w-xl text-center"><p class="text-grey-2">Connect on the <a class="underline" href="#demo">Demo</a> tab first (demo / demo).</p></div>`;
+    $("#view").innerHTML =
+      `<div class="card mx-auto max-w-xl text-center"><p class="text-grey-2">Connect on the <a class="underline" href="#demo">Demo</a> tab first (demo / demo).</p></div>`;
     return;
   }
   await renderToolkit(hash.slice(1), $("#view"), ctx());

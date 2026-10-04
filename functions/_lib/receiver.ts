@@ -9,6 +9,8 @@ export const EXPECTED_AUTH_KEY = "console-secret";
 
 export const BACKOFF_MS = [0, 2_000, 10_000, 60_000, 300_000];
 export const MAX_ATTEMPTS = BACKOFF_MS.length;
+export const MAX_BODY_BYTES = 256 * 1024;
+const MAX_FAIL_TIMES = MAX_ATTEMPTS - 1;
 
 export interface InboundRequest {
   authKey: string | null;
@@ -21,19 +23,36 @@ export interface InboundRequest {
 
 // ---- receive + forward -----------------------------------------------------
 
-export async function receiveDelivery(store: KvStore, req: InboundRequest): Promise<{ status: number; body: unknown }> {
+export interface ReceiveResult {
+  status: number;
+  body: unknown;
+  // Work the caller should run after responding (ctx.waitUntil in a Function).
+  background: Promise<unknown> | null;
+}
+
+// Parse, authenticate, dedupe and log an inbound webhook. Returns immediately
+// with a 2xx; the forward to the CRM is handed back as `background` so the
+// HTTP response is never held up by a slow downstream (which would make the
+// sender time out and retry, creating the duplicates we are trying to avoid).
+export async function receiveDelivery(store: KvStore, req: InboundRequest): Promise<ReceiveResult> {
+  if (req.raw.length > MAX_BODY_BYTES) return { status: 413, body: { error: `Body exceeds ${MAX_BODY_BYTES} bytes` }, background: null };
   const format = detectFormat(req.contentType, req.raw);
   let payload: WebhookDelivery;
   try {
     payload = normalizeDelivery(parseBody(format, req.raw));
   } catch (e) {
-    return { status: 400, body: { error: `Could not parse ${format} body: ${e instanceof Error ? e.message : String(e)}` } };
+    return { status: 400, body: { error: `Could not parse ${format} body: ${e instanceof Error ? e.message : String(e)}` }, background: null };
   }
   const authKeyValid = req.authKey === EXPECTED_AUTH_KEY;
   const key = idempotencyKeyOf(payload);
+  const deliveryId = crypto.randomUUID();
+  // Best-effort dedupe: KV is eventually consistent, so two copies arriving
+  // within the same few milliseconds can both pass. Claim the key before any
+  // other write to keep that window as small as KV allows.
   const duplicate = await store.hasIdempotencyKey(key);
+  if (!duplicate) await store.putIdempotencyKey(key, deliveryId);
   const delivery: InboundDelivery = {
-    id: crypto.randomUUID(),
+    id: deliveryId,
     idempotencyKey: key,
     receivedAt: new Date().toISOString(),
     format,
@@ -44,7 +63,13 @@ export async function receiveDelivery(store: KvStore, req: InboundRequest): Prom
     forward: {
       status: !authKeyValid || duplicate ? "dead" : payload.leadId === 0 ? "skipped" : "pending",
       attempts: 0,
-      lastError: !authKeyValid ? "authKey mismatch; not forwarded" : duplicate ? "duplicate delivery; not forwarded" : payload.leadId === 0 ? "informational event without a lead; logged only" : null,
+      lastError: !authKeyValid
+        ? "authKey mismatch; not forwarded"
+        : duplicate
+          ? "duplicate delivery; not forwarded"
+          : payload.leadId === 0
+            ? "informational event without a lead; logged only"
+            : null,
       nextAttemptAt: null,
       deliveredAt: null,
     },
@@ -52,11 +77,10 @@ export async function receiveDelivery(store: KvStore, req: InboundRequest): Prom
   await store.deliveries.put(delivery);
   // Keep the simple event log on the front page working.
   await store.pushEvent({ id: delivery.id, receivedAt: delivery.receivedAt, authKeyValid, payload });
-  if (!duplicate) await store.putIdempotencyKey(key, delivery.id);
 
-  // Always answer 2xx quickly; anything downstream is our problem, not the sender's.
-  if (delivery.forward.status === "pending") await forward(store, delivery, req.failTimes ?? 0);
-  return { status: 202, body: { received: true, deliveryId: delivery.id, duplicate, authKeyValid } };
+  const failTimes = Math.min(Math.max(req.failTimes ?? 0, 0), MAX_FAIL_TIMES);
+  const background = delivery.forward.status === "pending" ? forward(store, delivery, failTimes) : null;
+  return { status: 202, body: { received: true, deliveryId: delivery.id, duplicate, authKeyValid }, background };
 }
 
 // Forward to the CRM with exponential backoff. Attempts whose backoff has not
@@ -76,7 +100,16 @@ export async function forward(store: KvStore, delivery: InboundDelivery, failTim
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
-    await store.attempts.put({ id: crypto.randomUUID(), deliveryId: current.id, attempt: attemptNo, at: new Date().toISOString(), ok, status: ok ? 200 : 500, error, durationMs: Date.now() - t0 });
+    await store.attempts.put({
+      id: crypto.randomUUID(),
+      deliveryId: current.id,
+      attempt: attemptNo,
+      at: new Date().toISOString(),
+      ok,
+      status: ok ? 200 : 500,
+      error,
+      durationMs: Date.now() - t0,
+    });
     const exhausted = attemptNo >= MAX_ATTEMPTS;
     current = {
       ...current,

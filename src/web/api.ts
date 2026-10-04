@@ -30,7 +30,10 @@ export interface Credentials {
 }
 
 export class ApiError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -69,7 +72,8 @@ export class DialerApi {
   startImport = (id: number) => this.call<{ code: number }>("POST", `/imports/${id}/start`);
   fieldMappings = () => this.call<FieldMapping[]>("GET", "/field-mappings");
   createFieldMapping = (body: { name: string; mappings: Record<string, string> }) => this.call<{ id: number }>("POST", "/field-mappings", {}, body);
-  updateFieldMapping = (id: number, body: { name?: string; mappings?: Record<string, string> }) => this.call<{ code: number }>("PUT", `/field-mappings/${id}`, {}, body);
+  updateFieldMapping = (id: number, body: { name?: string; mappings?: Record<string, string> }) =>
+    this.call<{ code: number }>("PUT", `/field-mappings/${id}`, {}, body);
   deleteFieldMapping = (id: number) => this.call<{ code: number }>("DELETE", `/field-mappings/${id}`);
 }
 
@@ -82,42 +86,81 @@ const j = async <T>(path: string, init?: RequestInit): Promise<T> => {
 };
 
 export interface Overview {
-  leads: number; contacts: number; imports: number; fieldMappings: number; webhooks: number;
+  leads: number;
+  contacts: number;
+  imports: number;
+  fieldMappings: number;
+  webhooks: number;
   deliveries: { total: number; delivered: number; pending: number; dead: number; duplicates: number };
-  crm: number; syncRuns: number; requests: number; cursor: string | null;
+  crm: number;
+  syncRuns: number;
+  requests: number;
+  cursor: string | null;
 }
-export interface Check { id: string; level: "ok" | "warn" | "error"; title: string; detail: string; fix?: string }
-export interface ImportPreview { headers: string[]; rowCount: number; guesses: { header: string; fieldId: number | null }[]; columnMap: Record<string, string>; plan: ImportPlan; rows: Record<string, string>[] }
+export interface Check {
+  id: string;
+  level: "ok" | "warn" | "error";
+  title: string;
+  detail: string;
+  fix?: string;
+}
+export interface ImportPreview {
+  headers: string[];
+  rowCount: number;
+  guesses: { header: string; fieldId: number | null }[];
+  columnMap: Record<string, string>;
+  plan: ImportPlan;
+  rows: Record<string, string>[];
+}
 
 export const consoleApi = {
   events: async () => (await j<{ events: ReceivedEvent[] }>("/console/events")).events,
   reset: () => fetch("/console/events", { method: "DELETE" }),
   overview: () => j<Overview>("/integrations/overview"),
   requests: async () => (await j<{ requests: RequestLogEntry[] }>("/integrations/requests")).requests,
-  deliveries: () => j<{ retried: number; deliveries: InboundDelivery[] }>("/integrations/deliveries"),
+  deliveries: async () => (await j<{ deliveries: InboundDelivery[] }>("/integrations/deliveries")).deliveries,
+  retryDue: async () => (await j<{ retried: number }>("/integrations/deliveries/retry", { method: "POST" })).retried,
   delivery: (id: string) => j<{ delivery: InboundDelivery; attempts: ForwardAttempt[] }>(`/integrations/deliveries/${id}`),
   replay: (id: string) => j<{ delivery: InboundDelivery }>(`/integrations/deliveries/${id}/replay`, { method: "POST" }),
   crm: async () => (await j<{ records: CrmRecord[] }>("/integrations/crm")).records,
-  editCrm: (id: string, properties: Record<string, string>) => j<{ record: CrmRecord }>(`/integrations/crm/${id}`, { method: "PUT", body: JSON.stringify({ properties }) }),
+  editCrm: (id: string, properties: Record<string, string>) =>
+    j<{ record: CrmRecord }>(`/integrations/crm/${id}`, { method: "PUT", body: JSON.stringify({ properties }) }),
   clearCrm: () => j<{ ok: true }>("/integrations/crm", { method: "DELETE" }),
   connector: () => j<{ connector: ConnectorConfig; cursor: string | null; mappings: FieldMapping[] }>("/integrations/connector"),
-  saveConnector: (patch: Partial<ConnectorConfig> & { cursor?: string | null }) => j<{ connector: ConnectorConfig; cursor: string | null }>("/integrations/connector", { method: "PUT", body: JSON.stringify(patch) }),
+  saveConnector: (patch: Partial<ConnectorConfig> & { cursor?: string | null }) =>
+    j<{ connector: ConnectorConfig; cursor: string | null }>("/integrations/connector", { method: "PUT", body: JSON.stringify(patch) }),
   sync: (dryRun: boolean) => j<{ run: SyncRun }>(`/integrations/sync?dryRun=${dryRun ? 1 : 0}`, { method: "POST" }),
   syncRuns: async () => (await j<{ runs: SyncRun[] }>("/integrations/sync")).runs,
-  importPreview: (body: { csv: string; columnMap?: Record<string, string>; poolId?: number; matchFields?: number[]; blacklist?: number[]; updateFields?: number[] }) => j<ImportPreview>("/integrations/import/preview", { method: "POST", body: JSON.stringify(body) }),
+  importPreview: (body: {
+    csv: string;
+    columnMap?: Record<string, string>;
+    poolId?: number;
+    matchFields?: number[];
+    blacklist?: number[];
+    updateFields?: number[];
+  }) => j<ImportPreview>("/integrations/import/preview", { method: "POST", body: JSON.stringify(body) }),
   diagnose: async () => (await j<{ checks: Check[] }>("/integrations/diagnose")).checks,
   journeys: async () => (await j<{ triggers: JourneyTrigger[] }>("/journeys")).triggers,
-  createJourney: (body: Partial<JourneyTrigger>) => j<{ trigger: JourneyTrigger; triggerUrl: string }>("/journeys", { method: "POST", body: JSON.stringify(body) }),
+  createJourney: (body: Partial<JourneyTrigger>) =>
+    j<{ trigger: JourneyTrigger; triggerUrl: string }>("/journeys", { method: "POST", body: JSON.stringify(body) }),
   deleteJourney: (id: string) => j<{ ok: true }>(`/journeys/${id}`, { method: "DELETE" }),
   journeyRuns: async () => (await j<{ runs: JourneyRunLog[] }>("/journeys/runs")).runs,
   // Fire a trigger exactly like an external system would (Bearer token, JSON body).
   fireJourney: async (id: string, token: string, body: unknown) => {
-    const res = await fetch(`/journeys/${id}/trigger`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    const res = await fetch(`/journeys/${id}/trigger`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
     return { status: res.status, body: await res.json() };
   },
   // Send a raw webhook to the receiver in a chosen wire format.
   sendRaw: async (contentType: string, raw: string, authKey: string, failTimes = 0) => {
-    const res = await fetch(`/hooks/receive?authKey=${encodeURIComponent(authKey)}${failTimes ? `&failTimes=${failTimes}` : ""}`, { method: "POST", headers: { "Content-Type": contentType }, body: raw });
+    const res = await fetch(`/hooks/receive?authKey=${encodeURIComponent(authKey)}${failTimes ? `&failTimes=${failTimes}` : ""}`, {
+      method: "POST",
+      headers: { "Content-Type": contentType },
+      body: raw,
+    });
     return { status: res.status, body: await res.json() };
   },
 };

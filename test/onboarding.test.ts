@@ -29,7 +29,10 @@ describe("csv", () => {
   it("parses quoted cells, semicolons and a BOM", () => {
     const { headers, rows } = parseCsv('\uFEFFFornavn;Efternavn;Telefon\n"Jens";"Hansen, Jr";"20 12 34 56"\nIda;Lund;"31 ""44"" 55 66"\n');
     expect(headers).toEqual(["Fornavn", "Efternavn", "Telefon"]);
-    expect(rows).toEqual([["Jens", "Hansen, Jr", "20 12 34 56"], ["Ida", "Lund", '31 "44" 55 66']]);
+    expect(rows).toEqual([
+      ["Jens", "Hansen, Jr", "20 12 34 56"],
+      ["Ida", "Lund", '31 "44" 55 66'],
+    ]);
   });
   it("guesses field ids from Danish and English headers", () => {
     expect(guessField("Fornavn", seed.fields)?.id).toBe(1);
@@ -72,11 +75,31 @@ describe("import pipeline", () => {
 describe("imports API", () => {
   it("runs create -> insert -> start -> processed, adds to campaign and emits leads_inserted", async () => {
     const store = new MemoryStore();
-    const created = await handle(req("POST", "/imports", { body: { poolId: 21, match: { fields: [3], blacklist: [23] }, updateFields: [4], onImportedAction: { type: "addToCampaign", campaignId: 412 }, callbackUrl: "https://example.com/cb" } }), store);
+    const created = await handle(
+      req("POST", "/imports", {
+        body: {
+          poolId: 21,
+          match: { fields: [3], blacklist: [23] },
+          updateFields: [4],
+          onImportedAction: { type: "addToCampaign", campaignId: 412 },
+          callbackUrl: "https://example.com/cb",
+        },
+      }),
+      store,
+    );
     expect(created.status).toBe(200);
     const { id } = created.body as { id: number };
 
-    const inserted = await handle(req("POST", `/imports/${id}/insert`, { body: [{ data: { "1": "Alice", "2": "Andersen", "3": "+45 20 12 34 56", "4": "alice@example.dk" } }, { data: { "1": "Bob", "3": "+45 12 12 12 12" } }, { data: { "1": "Ole", "3": "+45 99 88 77 66" } }] }), store);
+    const inserted = await handle(
+      req("POST", `/imports/${id}/insert`, {
+        body: [
+          { data: { "1": "Alice", "2": "Andersen", "3": "+45 20 12 34 56", "4": "alice@example.dk" } },
+          { data: { "1": "Bob", "3": "+45 12 12 12 12" } },
+          { data: { "1": "Ole", "3": "+45 99 88 77 66" } },
+        ],
+      }),
+      store,
+    );
     expect(inserted.status).toBe(200);
     // Also accept the spec's typo'd path.
     expect((await handle(req("POST", `/imports${id}/insert`, { body: [{ data: { "1": "Carl", "3": "+45 13 13 13 13" } }] }), store)).status).toBe(200);
@@ -102,7 +125,9 @@ describe("imports API", () => {
   it("validates poolId, campaignId and field ids on create", async () => {
     const store = new MemoryStore();
     expect((await handle(req("POST", "/imports", { body: { poolId: 999 } }), store)).body).toMatchObject({ code: 400, message: "Unknown poolId" });
-    expect((await handle(req("POST", "/imports", { body: { poolId: 21, onImportedAction: { type: "addToCampaign", campaignId: 1 } } }), store)).status).toBe(400);
+    expect((await handle(req("POST", "/imports", { body: { poolId: 21, onImportedAction: { type: "addToCampaign", campaignId: 1 } } }), store)).status).toBe(
+      400,
+    );
     expect((await handle(req("POST", "/imports", { body: { poolId: 21, match: { fields: [999] } } }), store)).status).toBe(400);
   });
 });
@@ -155,7 +180,10 @@ describe("field mappings API", () => {
 
 describe("spec fidelity", () => {
   it("builds firstUrl/nextUrl/lastUrl in meta when a base URL is known", async () => {
-    const res = await handle(req("GET", "/leads", { query: { pageSize: "3", page: "2", includeMeta: "true" }, baseUrl: "https://api.example.test/v1/leads" }), new MemoryStore());
+    const res = await handle(
+      req("GET", "/leads", { query: { pageSize: "3", page: "2", includeMeta: "true" }, baseUrl: "https://api.example.test/v1/leads" }),
+      new MemoryStore(),
+    );
     const meta = (res.body as { meta: Meta }).meta.pagination;
     expect(meta.firstUrl).toBe("https://api.example.test/v1/leads?pageSize=3&includeMeta=true");
     expect(meta.previousUrl).toBe("https://api.example.test/v1/leads?pageSize=3&includeMeta=true");
@@ -163,7 +191,10 @@ describe("spec fidelity", () => {
     expect(meta.lastUrl).toContain("page=3");
   });
   it("rejects templates on events other than lead_saved", async () => {
-    const res = await handle(req("POST", "/webhooks", { body: { event: "call_ended", url: "https://example.com/h", template: { x: "[1]" } } }), new MemoryStore());
+    const res = await handle(
+      req("POST", "/webhooks", { body: { event: "call_ended", url: "https://example.com/h", template: { x: "[1]" } } }),
+      new MemoryStore(),
+    );
     expect(res.status).toBe(400);
   });
   it("resolves [status], [last_called_by] and [lead_id] special tags", () => {

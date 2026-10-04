@@ -34,7 +34,12 @@ export class RateLimiter {
   private readonly waiters: (() => void)[] = [];
   waitedMs = 0;
 
-  constructor(private readonly perMinute = 60, private readonly concurrent = 2, private readonly now: () => number = Date.now, private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))) {
+  constructor(
+    private readonly perMinute = 60,
+    private readonly concurrent = 2,
+    private readonly now: () => number = Date.now,
+    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+  ) {
     this.tokens = perMinute;
     this.last = now();
   }
@@ -83,7 +88,14 @@ export async function* fetchChangedLeads(client: SyncClient, limiter: RateLimite
       await limiter.acquire();
       let res;
       try {
-        res = await client.get("/leads", { filters: JSON.stringify(f), sortProperty: "lastModifiedTime", sortDirection: "ASC", page: String(page), pageSize: String(opts.pageSize), includeMeta: "true" });
+        res = await client.get("/leads", {
+          filters: JSON.stringify(f),
+          sortProperty: "lastModifiedTime",
+          sortDirection: "ASC",
+          page: String(page),
+          pageSize: String(opts.pageSize),
+          includeMeta: "true",
+        });
       } finally {
         limiter.release();
       }

@@ -69,14 +69,19 @@ export function parseCsv(text: string): { headers: string[]; rows: string[][] } 
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]!;
     if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
-      else if (ch === '"') quoted = false;
+      if (ch === '"' && text[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
       else cell += ch;
     } else if (ch === '"') quoted = true;
-    else if (ch === delimiter) { row.push(cell); cell = ""; }
-    else if (ch === "\n" || ch === "\r") {
+    else if (ch === delimiter) {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n" || ch === "\r") {
       if (ch === "\r" && text[i + 1] === "\n") i++;
-      row.push(cell); cell = "";
+      row.push(cell);
+      cell = "";
       if (row.some((c) => c !== "")) out.push(row);
       row = [];
     } else cell += ch;

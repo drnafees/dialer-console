@@ -1,3 +1,4 @@
+import { mergePairs, pairsToRecord, recordToPairs, type IdKind } from "./data";
 import { planImport } from "./import-pipeline";
 import { matchKey } from "./normalize";
 import * as seed from "./seed";
@@ -41,6 +42,8 @@ export interface Store {
   listFieldMappings(): Promise<FieldMapping[]>;
   putFieldMapping(mapping: FieldMapping): Promise<void>;
   deleteFieldMapping(id: number): Promise<void>;
+  // Monotonic id per entity kind; never reuses a value within a store.
+  nextId(kind: IdKind): Promise<number>;
 }
 
 export interface ApiRequest {
@@ -112,16 +115,34 @@ export function matchesFilters<T extends object>(row: T, filters: Filters): bool
     const value = (row as Record<string, unknown>)[prop];
     return Object.entries(ops).every(([op, expected]) => {
       switch (op as Op) {
-        case "$eq": return String(value) === String(expected);
-        case "$neq": return String(value) !== String(expected);
-        case "$gt": return value !== null && value !== undefined && compare(value, expected) > 0;
-        case "$lt": return value !== null && value !== undefined && compare(value, expected) < 0;
-        case "$c": return String(value ?? "").toLowerCase().includes(String(expected).toLowerCase());
-        case "$nc": return !String(value ?? "").toLowerCase().includes(String(expected).toLowerCase());
-        default: return false;
+        case "$eq":
+          return String(value) === String(expected);
+        case "$neq":
+          return String(value) !== String(expected);
+        case "$gt":
+          return value !== null && value !== undefined && compare(value, expected) > 0;
+        case "$lt":
+          return value !== null && value !== undefined && compare(value, expected) < 0;
+        case "$c":
+          return String(value ?? "")
+            .toLowerCase()
+            .includes(String(expected).toLowerCase());
+        case "$nc":
+          return !String(value ?? "")
+            .toLowerCase()
+            .includes(String(expected).toLowerCase());
+        default:
+          return false;
       }
     });
   });
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number): number | null {
+  if (raw === undefined || raw === "") return fallback;
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return n >= 1 ? n : null;
 }
 
 function list<T extends object>(rows: T[], key: string, query: Record<string, string>, baseUrl?: string): ApiResult {
@@ -131,18 +152,26 @@ function list<T extends object>(rows: T[], key: string, query: Record<string, st
   for (const ops of Object.values(filters)) if ("$in" in ops) return err(400, "Operator $in is not supported on this endpoint");
   let out = rows.filter((r) => matchesFilters(r, filters));
 
+  if (query.sortDirection && query.sortDirection !== "ASC" && query.sortDirection !== "DESC") return err(400, "sortDirection must be ASC or DESC");
   if (query.sortProperty) {
     const prop = query.sortProperty;
     const dir = query.sortDirection === "DESC" ? -1 : 1;
+    // Nulls sort last regardless of direction, like most SQL engines' NULLS LAST.
     out = [...out].sort((a, b) => {
-      const av = (a as Record<string, unknown>)[prop] as never;
-      const bv = (b as Record<string, unknown>)[prop] as never;
-      return av < bv ? -dir : av > bv ? dir : 0;
+      const av = (a as Record<string, unknown>)[prop];
+      const bv = (b as Record<string, unknown>)[prop];
+      const an = av === null || av === undefined;
+      const bn = bv === null || bv === undefined;
+      if (an || bn) return an && bn ? 0 : an ? 1 : -1;
+      return compare(av, bv) * dir;
     });
   }
 
-  const pageSize = Math.min(Math.max(Number(query.pageSize ?? 1000), 1), 1000);
-  const page = Math.max(Number(query.page ?? 1), 1);
+  const pageSize = parsePositiveInt(query.pageSize, 1000);
+  const page = parsePositiveInt(query.page, 1);
+  if (pageSize === null) return err(400, "pageSize must be an integer between 1 and 1000");
+  if (page === null) return err(400, "page must be a positive integer");
+  if (pageSize > 1000) return err(400, "pageSize must be an integer between 1 and 1000");
   const total = out.length;
   const pageCount = Math.max(Math.ceil(total / pageSize), 1);
   const slice = out.slice((page - 1) * pageSize, page * pageSize);
@@ -167,13 +196,9 @@ function list<T extends object>(rows: T[], key: string, query: Record<string, st
   return ok(slice);
 }
 
-const contactData = (c: Contact): Record<string, string> => Object.fromEntries(c.data.map((p) => [String(p.id), p.value]));
-const toPairs = (data: Record<string, string>) => Object.entries(data).map(([id, value]) => ({ id: Number(id), value }));
-const mergeData = (current: Contact["data"], incoming: Record<string, string>) => {
-  const map = new Map(current.map((p) => [p.id, p.value]));
-  for (const [id, value] of Object.entries(incoming)) map.set(Number(id), value);
-  return [...map.entries()].map(([id, value]) => ({ id, value }));
-};
+const contactData = (c: Contact) => pairsToRecord(c.data);
+const toPairs = recordToPairs;
+const mergeData = (current: Contact["data"], incoming: Record<string, string>) => mergePairs(current, recordToPairs(incoming));
 
 // Place a contact on a campaign: creates a lead whose masterData is the
 // contact's data restricted to the campaign's master fields.
@@ -182,7 +207,8 @@ async function addContactToCampaign(store: Store, contact: Contact, campaignId: 
   const allowed = new Set(campaign.masterFields.map((f) => f.id));
   const now = new Date().toISOString();
   const lead: Lead = {
-    id: 204200000 + Math.floor(Math.random() * 99999),
+    id: await store.nextId("lead"),
+    contactId: contact.id,
     campaignId,
     contactAttempts: 0,
     lastModifiedTime: now,
@@ -211,7 +237,10 @@ export async function processImport(id: number, store: Store): Promise<{ job: Im
     const result = { inserted: 0, updated: 0, duplicates: 0, addedToCampaign: 0, errors: [] as string[] };
     const now = new Date().toISOString();
     for (const row of plan.rows) {
-      if (row.action === "duplicate" || row.action === "blacklisted") { result.duplicates++; continue; }
+      if (row.action === "duplicate" || row.action === "blacklisted") {
+        result.duplicates++;
+        continue;
+      }
       let contact: Contact;
       if (row.action === "update") {
         const existing = (await store.getContact(row.existingId!))!;
@@ -219,7 +248,7 @@ export async function processImport(id: number, store: Store): Promise<{ job: Im
         contact = { ...existing, data: mergeData(existing.data, patch), lastModifiedTime: now };
         result.updated++;
       } else {
-        contact = { id: 400000 + Math.floor(Math.random() * 99999), poolId: job.poolId, externalId: null, created: now, lastModifiedTime: now, data: toPairs(row.data) };
+        contact = { id: await store.nextId("contact"), poolId: job.poolId, externalId: null, created: now, lastModifiedTime: now, data: toPairs(row.data) };
         result.inserted++;
       }
       await store.putContact(contact);
@@ -233,7 +262,12 @@ export async function processImport(id: number, store: Store): Promise<{ job: Im
     await store.putImport(done);
     return { job: done, emitted };
   } catch (e) {
-    const failed: ImportJob = { ...job, status: "failed", completed: new Date().toISOString(), result: { inserted: 0, updated: 0, duplicates: 0, addedToCampaign: 0, errors: [String(e)] } };
+    const failed: ImportJob = {
+      ...job,
+      status: "failed",
+      completed: new Date().toISOString(),
+      result: { inserted: 0, updated: 0, duplicates: 0, addedToCampaign: 0, errors: [String(e)] },
+    };
     await store.putImport(failed);
     return { job: failed, emitted };
   }
@@ -253,13 +287,6 @@ const CLOSE_EVENT: Partial<Record<LeadStatus, WebhookEvent>> = {
   privateRedial: "leadClosedPrivateRedial",
 };
 
-function mergePairs(current: { id: number; value: string }[], incoming: { id: number; value: string }[] | undefined) {
-  if (!incoming) return current;
-  const map = new Map(current.map((p) => [p.id, p.value]));
-  for (const p of incoming) map.set(p.id, p.value);
-  return [...map.entries()].map(([id, value]) => ({ id, value }));
-}
-
 export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> {
   if (!checkBasicAuth(req.authorization)) return { status: 401, body: { status: "error", message: "Authentication failed" }, emitted: [] };
 
@@ -271,7 +298,13 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
   if (path === "/organization" && req.method === "GET") return ok(seed.organization);
   if (path === "/fields" && req.method === "GET") return list(seed.fields, "fields", req.query, req.baseUrl);
   if (path === "/users" && req.method === "GET") return list(seed.users, "users", req.query, req.baseUrl);
-  if (path === "/campaigns" && req.method === "GET") return list(seed.campaigns.map(({ id, settings }) => ({ id, settings })), "campaigns", req.query, req.baseUrl);
+  if (path === "/campaigns" && req.method === "GET")
+    return list(
+      seed.campaigns.map(({ id, settings }) => ({ id, settings })),
+      "campaigns",
+      req.query,
+      req.baseUrl,
+    );
   if ((match = m(/^\/campaigns\/(\d+)$/)) && req.method === "GET") {
     const campaign = seed.campaigns.find((c) => c.id === idOf(match!));
     return campaign ? ok(campaign) : err(404, "Campaign not found");
@@ -281,12 +314,13 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
   if (path === "/leads" && req.method === "GET") return list(await store.listLeads(), "leads", req.query, req.baseUrl);
   if (path === "/leads" && req.method === "POST") {
     const parsed = LeadWriteSchema.safeParse(req.body);
-    if (!parsed.success) return err(400, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
+    if (!parsed.success) return err(400, zodMessage(parsed.error.issues));
     if (!parsed.data.campaignId) return err(400, "campaignId is required");
     if (!seed.campaigns.some((c) => c.id === parsed.data.campaignId)) return err(400, "Unknown campaignId");
     const now = new Date().toISOString();
     const lead: Lead = {
-      id: 204200000 + Math.floor(Math.random() * 99999),
+      id: await store.nextId("lead"),
+      contactId: null,
       campaignId: parsed.data.campaignId,
       contactAttempts: 0,
       lastModifiedTime: now,
@@ -312,7 +346,7 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
     }
     if (req.method === "PUT") {
       const parsed = LeadWriteSchema.safeParse(req.body);
-      if (!parsed.success) return err(400, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
+      if (!parsed.success) return err(400, zodMessage(parsed.error.issues));
       const before = lead.status;
       const status = parsed.data.status ?? lead.status;
       const updated: Lead = {
@@ -346,7 +380,14 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
     if (!parsed.success) return err(400, zodMessage(parsed.error.issues));
     if (!seed.pools.some((p) => p.id === parsed.data.poolId)) return err(400, "Unknown poolId");
     const now = new Date().toISOString();
-    const contact: Contact = { id: 400000 + Math.floor(Math.random() * 99999), poolId: parsed.data.poolId, externalId: parsed.data.externalId ?? null, created: now, lastModifiedTime: now, data: toPairs(parsed.data.data) };
+    const contact: Contact = {
+      id: await store.nextId("contact"),
+      poolId: parsed.data.poolId,
+      externalId: parsed.data.externalId ?? null,
+      created: now,
+      lastModifiedTime: now,
+      data: toPairs(parsed.data.data),
+    };
     await store.putContact(contact);
     return ok({ id: contact.id });
   }
@@ -357,7 +398,8 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
     const criteria = Object.entries(req.body as Record<string, unknown>);
     for (const [k, v] of criteria) {
       if (!/^\d+$/.test(k)) return err(400, `Key "${k}" is not a field id`);
-      if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).some((op) => op !== "$eq" && op !== "$in")) return err(400, "Only $eq and $in are allowed");
+      if (v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).some((op) => op !== "$eq" && op !== "$in"))
+        return err(400, "Only $eq and $in are allowed");
     }
     const contacts = (await store.listContacts()).filter((c) => {
       const data = contactData(c);
@@ -387,7 +429,13 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
     if (req.method === "PATCH") {
       const parsed = ContactPatchSchema.safeParse(req.body);
       if (!parsed.success) return err(400, zodMessage(parsed.error.issues));
-      const updated: Contact = { ...contact, poolId: parsed.data.poolId ?? contact.poolId, externalId: parsed.data.externalId === undefined ? contact.externalId : parsed.data.externalId, data: parsed.data.data ? mergeData(contact.data, parsed.data.data) : contact.data, lastModifiedTime: new Date().toISOString() };
+      const updated: Contact = {
+        ...contact,
+        poolId: parsed.data.poolId ?? contact.poolId,
+        externalId: parsed.data.externalId === undefined ? contact.externalId : parsed.data.externalId,
+        data: parsed.data.data ? mergeData(contact.data, parsed.data.data) : contact.data,
+        lastModifiedTime: new Date().toISOString(),
+      };
       await store.putContact(updated);
       return ok({ code: 200, message: "Contact updated" });
     }
@@ -398,13 +446,17 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
     if (!parsed.success) return err(400, zodMessage(parsed.error.issues));
     const contact = (await store.listContacts()).find((c) => c.externalId === externalId && (!parsed.data.poolId || c.poolId === parsed.data.poolId));
     if (!contact) return err(404, "Contact not found");
-    const updated: Contact = { ...contact, data: parsed.data.data ? mergeData(contact.data, parsed.data.data) : contact.data, lastModifiedTime: new Date().toISOString() };
+    const updated: Contact = {
+      ...contact,
+      data: parsed.data.data ? mergeData(contact.data, parsed.data.data) : contact.data,
+      lastModifiedTime: new Date().toISOString(),
+    };
     await store.putContact(updated);
     // Keep any leads created from this contact in sync, as the upstream does.
     const emitted: Emitted[] = [];
     if (parsed.data.data) {
       for (const lead of await store.listLeads()) {
-        if (lead.id !== contact.id - 300000 + 204000000) continue;
+        if (lead.contactId !== contact.id) continue;
         const synced: Lead = { ...lead, masterData: mergePairs(lead.masterData, toPairs(parsed.data.data)), lastModifiedTime: updated.lastModifiedTime };
         await store.putLead(synced);
         emitted.push({ event: "lead_saved", lead: synced });
@@ -428,11 +480,21 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
     const parsed = ImportCreateSchema.safeParse(req.body);
     if (!parsed.success) return err(400, zodMessage(parsed.error.issues));
     if (!seed.pools.some((p) => p.id === parsed.data.poolId)) return err(400, "Unknown poolId");
-    if (parsed.data.onImportedAction && !seed.campaigns.some((c) => c.id === parsed.data.onImportedAction!.campaignId)) return err(400, "Unknown campaignId in onImportedAction");
+    if (parsed.data.onImportedAction && !seed.campaigns.some((c) => c.id === parsed.data.onImportedAction!.campaignId))
+      return err(400, "Unknown campaignId in onImportedAction");
     const fields = fieldMap();
     const unknown = [...parsed.data.match.fields, ...parsed.data.updateFields].find((id) => !fields.has(id));
     if (unknown !== undefined) return err(400, `Unknown field id ${unknown}`);
-    const job: ImportJob = { id: 7000 + Math.floor(Math.random() * 999), ...parsed.data, status: "created", created: new Date().toISOString(), started: null, completed: null, rows: [], result: null };
+    const job: ImportJob = {
+      id: await store.nextId("import"),
+      ...parsed.data,
+      status: "created",
+      created: new Date().toISOString(),
+      started: null,
+      completed: null,
+      rows: [],
+      result: null,
+    };
     await store.putImport(job);
     return ok({ id: job.id });
   }
@@ -471,7 +533,7 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
     const fields = fieldMap();
     const bad = Object.keys(parsed.data.mappings).find((k) => !fields.has(Number(k)));
     if (bad) return err(400, `Unknown field id ${bad}`);
-    const mapping: FieldMapping = { id: 500 + Math.floor(Math.random() * 499), ...parsed.data, lastUpdated: new Date().toISOString() };
+    const mapping: FieldMapping = { id: await store.nextId("mapping"), ...parsed.data, lastUpdated: new Date().toISOString() };
     await store.putFieldMapping(mapping);
     return ok({ id: mapping.id });
   }
@@ -486,6 +548,9 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
     if (req.method === "PUT") {
       const parsed = FieldMappingWriteSchema.partial().safeParse(req.body);
       if (!parsed.success) return err(400, zodMessage(parsed.error.issues));
+      const fields = fieldMap();
+      const bad = Object.keys(parsed.data.mappings ?? {}).find((k) => !fields.has(Number(k)));
+      if (bad) return err(400, `Unknown field id ${bad}`);
       await store.putFieldMapping({ ...mapping, ...parsed.data, lastUpdated: new Date().toISOString() });
       return ok({ code: 200, message: "Field mapping updated" });
     }
@@ -495,10 +560,10 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
   if (path === "/webhooks" && req.method === "GET") return list(await store.listWebhooks(), "webhooks", req.query, req.baseUrl);
   if (path === "/webhooks" && req.method === "POST") {
     const parsed = WebhookWriteSchema.safeParse(req.body);
-    if (!parsed.success) return err(400, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
+    if (!parsed.success) return err(400, zodMessage(parsed.error.issues));
     if (parsed.data.template && parsed.data.event !== "lead_saved") return err(400, "template is only supported for the lead_saved event");
     const now = new Date().toISOString();
-    const webhook: Webhook = { id: 9000 + Math.floor(Math.random() * 999), ...parsed.data, created: now, updated: now };
+    const webhook: Webhook = { id: await store.nextId("webhook"), ...parsed.data, created: now, updated: now };
     await store.putWebhook(webhook);
     return ok({ id: webhook.id });
   }
@@ -512,8 +577,9 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
     }
     if (req.method === "PUT") {
       const parsed = WebhookWriteSchema.partial().safeParse(req.body);
-      if (!parsed.success) return err(400, parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
+      if (!parsed.success) return err(400, zodMessage(parsed.error.issues));
       const updated: Webhook = { ...webhook, ...parsed.data, updated: new Date().toISOString() };
+      if (updated.template && updated.event !== "lead_saved") return err(400, "template is only supported for the lead_saved event");
       await store.putWebhook(updated);
       return ok({ code: 200, message: "Webhook updated" });
     }
@@ -527,9 +593,14 @@ export async function handle(req: ApiRequest, store: Store): Promise<ApiResult> 
 export function applyTemplate(template: Record<string, unknown> | undefined, lead: Lead): Record<string, unknown> | undefined {
   if (!template) return undefined;
   const values = new Map([...lead.masterData, ...lead.resultData].map((p) => [p.id, p.value]));
-  const special: Record<string, string> = { status: lead.status, last_called_by: lead.lastContactedBy === null ? "" : String(lead.lastContactedBy), lead_id: String(lead.id) };
+  const special: Record<string, string> = {
+    status: lead.status,
+    last_called_by: lead.lastContactedBy === null ? "" : String(lead.lastContactedBy),
+    lead_id: String(lead.id),
+  };
   const resolve = (v: unknown): unknown => {
-    if (typeof v === "string") return v.replace(/\[(\d+|status|last_called_by|lead_id)\]/g, (_, tag: string) => (/^\d+$/.test(tag) ? (values.get(Number(tag)) ?? "") : special[tag]!));
+    if (typeof v === "string")
+      return v.replace(/\[(\d+|status|last_called_by|lead_id)\]/g, (_, tag: string) => (/^\d+$/.test(tag) ? (values.get(Number(tag)) ?? "") : special[tag]!));
     if (Array.isArray(v)) return v.map(resolve);
     if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, resolve(x)]));
     return v;

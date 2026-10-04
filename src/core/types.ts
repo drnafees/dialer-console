@@ -61,6 +61,8 @@ export interface Lead {
   status: LeadStatus;
   active: boolean;
   externalId: number | null;
+  // The contact this lead was created from, when known (addContact / import).
+  contactId: number | null;
   masterData: DataPair[];
   resultData: DataPair[];
 }
@@ -87,7 +89,14 @@ export interface Session {
   lastUpdatedTime: string;
   status: LeadStatus;
   sessionSeconds: number;
-  cdr: { destination: string; startTime: string; answerTime: string | null; endTime: string; durationSeconds: number; disposition: "answered" | "noAnswer" | "busy" | "fail" };
+  cdr: {
+    destination: string;
+    startTime: string;
+    answerTime: string | null;
+    endTime: string;
+    durationSeconds: number;
+    disposition: "answered" | "noAnswer" | "busy" | "fail";
+  };
 }
 
 export interface User {
@@ -137,7 +146,16 @@ export interface ReceivedEvent {
 }
 
 export interface Meta {
-  pagination: { page: number; pageCount: number; pageSize: number; total: number; firstUrl?: string; previousUrl?: string | null; nextUrl?: string | null; lastUrl?: string };
+  pagination: {
+    page: number;
+    pageCount: number;
+    pageSize: number;
+    total: number;
+    firstUrl?: string;
+    previousUrl?: string | null;
+    nextUrl?: string | null;
+    lastUrl?: string;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -162,7 +180,9 @@ export interface Contact {
 
 export const ImportCreateSchema = z.object({
   poolId: z.coerce.number().int(),
-  match: z.object({ fields: z.array(z.coerce.number().int()).default([]), blacklist: z.array(z.coerce.number().int()).default([]) }).default({ fields: [], blacklist: [] }),
+  match: z
+    .object({ fields: z.array(z.coerce.number().int()).default([]), blacklist: z.array(z.coerce.number().int()).default([]) })
+    .default({ fields: [], blacklist: [] }),
   updateFields: z.array(z.coerce.number().int()).default([]),
   onImportedAction: z.object({ type: z.literal("addToCampaign"), campaignId: z.coerce.number().int() }).optional(),
   callbackUrl: z.string().url().optional(),
@@ -228,7 +248,13 @@ export interface InboundDelivery {
   duplicate: boolean;
   payload: WebhookDelivery;
   raw: string;
-  forward: { status: "pending" | "delivered" | "failed" | "dead" | "skipped"; attempts: number; lastError: string | null; nextAttemptAt: string | null; deliveredAt: string | null };
+  forward: {
+    status: "pending" | "delivered" | "failed" | "dead" | "skipped";
+    attempts: number;
+    lastError: string | null;
+    nextAttemptAt: string | null;
+    deliveredAt: string | null;
+  };
 }
 
 export interface ForwardAttempt {
